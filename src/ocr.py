@@ -50,6 +50,7 @@ def _load_image(image_input: Union[str, bytes, io.BytesIO, Image.Image, np.ndarr
 def _parse_all_candidates(text: str) -> List[Tuple[bool, int, int]]:
     """
     Finds all potential CP numbers in OCR text.
+    Enforces valid Pokemon GO CP range: 10 <= CP <= 6000.
     Returns a list of tuples: (has_cp_prefix: bool, value: int, digit_length: int)
     """
     if not text:
@@ -59,14 +60,13 @@ def _parse_all_candidates(text: str) -> List[Tuple[bool, int, int]]:
     # Priority 1: Match with explicit CP / ce / cp / c / p prefix
     for m in re.finditer(r'(?:cp|ce|cep|c|p)\s*[:\-\s]?\s*(\d+)\b', text, re.IGNORECASE):
         v = int(m.group(1))
-        # Supports values down to 1 (handles CP 1 glitch/custom/special mons)
-        if 1 <= v <= 6000:
+        if 10 <= v <= 6000:
             results.append((True, v, len(m.group(1))))
 
     # Priority 2: Standalone integer tokens
     for token in re.findall(r'\b\d+\b', text):
         v = int(token)
-        if 1 <= v <= 6000:
+        if 10 <= v <= 6000:
             results.append((False, v, len(token)))
 
     return results
@@ -84,7 +84,7 @@ def _parse_cp_text(text: str) -> Optional[int]:
 def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image, np.ndarray]) -> Optional[int]:
     """
     Extracts the Pokémon CP value from a Pokémon GO screenshot.
-    Uses multi-thresholding, strict top status-bar exclusion, and candidate scoring.
+    Uses multi-thresholding, status-bar exclusion, and candidate scoring.
     """
     img = _load_image(image_input)
     h, w = img.shape[:2]
@@ -107,8 +107,8 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
 
         all_found: List[Tuple[bool, int, int]] = []
 
-        # High thresholds isolate pure white font from colored Pokémon elements (horns, whiskers, sky)
-        thresholds = [240, 235, 230, 220, 210]
+        # High thresholds isolate pure white font from colored backgrounds/event illustrations
+        thresholds = [245, 240, 235, 230, 220]
         for th in thresholds:
             _, b = cv2.threshold(gray, th, 255, cv2.THRESH_BINARY_INV)
             bordered = cv2.copyMakeBorder(b, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
