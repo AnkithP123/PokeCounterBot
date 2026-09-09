@@ -43,7 +43,15 @@ class TestPokeCounterGame(unittest.TestCase):
         # Wrong count: 13 instead of 11
         ok, msg = game.process_count(user_id=2, extracted_cp=13)
         self.assertFalse(ok)
-        self.assertIn("13 ❌ Wrong CP, begin at 10.", msg)
+        self.assertIn("13 ❌ Wrong CP (expected 11)! Begin at 10.", msg)
+        self.assertIsNone(game.current_cp)
+        self.assertEqual(game.next_expected_cp, 10)
+
+        # Duplicate count: 10 again after 10
+        game.process_count(user_id=1, extracted_cp=10)
+        ok, msg = game.process_count(user_id=2, extracted_cp=10)
+        self.assertFalse(ok)
+        self.assertIn("10 ❌ CP 10 was already counted! Expected next was 11. Resetting to 10.", msg)
         self.assertIsNone(game.current_cp)
         self.assertEqual(game.next_expected_cp, 10)
 

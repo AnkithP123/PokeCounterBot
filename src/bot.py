@@ -196,8 +196,9 @@ async def on_message(message: discord.Message):
     )
 
     try:
-        image_bytes = await attachment.read()
-        extracted_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
+        async with message.channel.typing():
+            image_bytes = await attachment.read()
+            extracted_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
     except Exception as e:
         logger.error("Error reading image attachment: %s", e)
         return
@@ -234,8 +235,9 @@ async def on_message(message: discord.Message):
         # Classify species asynchronously in background and update the message: e.g. "Pikachu CP 11" or "Unknown Species CP 11"
         async def update_with_species():
             try:
-                res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes)
-                species = res.get("species")
+                async with message.channel.typing():
+                    res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes)
+                    species = res.get("species")
             except Exception as ex:
                 logger.error("Error classifying species on count: %s", ex)
                 species = None
