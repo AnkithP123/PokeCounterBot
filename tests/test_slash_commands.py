@@ -10,6 +10,7 @@ from src.bot import (
     cmd_check,
     cmd_set_count,
     cmd_set_number,
+    cmd_classify,
     get_game_for_channel,
     TARGET_CHANNEL_NAME
 )
@@ -17,7 +18,7 @@ from src.bot import (
 
 class TestSlashCommands(unittest.TestCase):
     def test_tree_commands_registered(self):
-        """Verify that slash commands status, count_status, rules, check, set_count, and set_number are registered."""
+        """Verify that slash commands status, count_status, rules, check, set_count, set_number, and classify are registered."""
         command_names = [cmd.name for cmd in bot.tree.get_commands()]
         self.assertIn("status", command_names)
         self.assertIn("count_status", command_names)
@@ -25,6 +26,7 @@ class TestSlashCommands(unittest.TestCase):
         self.assertIn("check", command_names)
         self.assertIn("set_count", command_names)
         self.assertIn("set_number", command_names)
+        self.assertIn("classify", command_names)
 
     def test_legacy_text_command_removed(self):
         """Verify that !count_status is no longer registered as a prefix command."""
@@ -228,6 +230,22 @@ class TestSlashCommands(unittest.TestCase):
 
         interaction.response.send_message.assert_called_once()
         self.assertIn("Invalid CP", interaction.response.send_message.call_args[0][0])
+
+    def test_cmd_classify_non_image(self):
+        """Verify /classify rejects non-image attachments."""
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        attachment = MagicMock(spec=discord.Attachment)
+        attachment.content_type = "text/plain"
+        attachment.filename = "report.txt"
+
+        import asyncio
+        asyncio.run(cmd_classify.callback(interaction, attachment, visible=False))
+
+        interaction.response.send_message.assert_called_once()
+        self.assertIn("valid image", interaction.response.send_message.call_args[0][0])
 
 
 if __name__ == "__main__":

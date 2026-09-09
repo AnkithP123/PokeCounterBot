@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from src.ocr import extract_cp_from_image
 from src.counter import PokeCounterGame
+from src.classifier import classify_pokemon_from_image
 
 # Configure logging
 logging.basicConfig(
@@ -412,6 +413,63 @@ async def cmd_check(interaction: discord.Interaction, image: discord.Attachment,
     )
     embed.set_thumbnail(url=image.url)
     await interaction.followup.send(embed=embed, ephemeral=not visible)
+
+
+@bot.tree.command(name="classify", description="Identify the Pokémon species from a Pokémon GO screenshot.")
+@discord.app_commands.describe(
+    image="The Pokémon GO screenshot to analyze",
+    visible="Whether to make the result visible to everyone in the channel (default: False)"
+)
+async def cmd_classify(interaction: discord.Interaction, image: discord.Attachment, visible: bool = False):
+    is_img = (image.content_type and image.content_type.startswith("image/")) or image.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+    if not is_img:
+        await interaction.response.send_message("❌ Please upload a valid image file (.png, .jpg, .webp).", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=not visible)
+
+    try:
+        image_bytes = await image.read()
+        res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes)
+    except Exception as e:
+        logger.error("Error classifying image in /classify: %s", e)
+        await interaction.followup.send("⚠️ Failed to process image file.", ephemeral=not visible)
+        return
+
+    species = res.get("species")
+    cp = res.get("cp")
+    hp = res.get("hp")
+    candy = res.get("candy_family")
+    explanation = res.get("explanation", "")
+
+    if not species:
+        desc = "⚠️ **Could not identify the Pokémon species.**\n"
+        if not candy:
+            desc += "Make sure the screenshot shows the stats card with the **Candy** section clearly visible (not an appraisal screen or cropped view)."
+        else:
+            desc += f"Found `{candy}` Candy, but could not determine the exact species.\n*{explanation}*"
+        embed = discord.Embed(title="🔎 Pokémon Classifier", description=desc, color=discord.Color.red())
+        embed.set_thumbnail(url=image.url)
+        await interaction.followup.send(embed=embed, ephemeral=not visible)
+        return
+
+    embed = discord.Embed(
+        title="🔎 Pokémon Species Identified",
+        description=f"Species: **{species}**",
+        color=discord.Color.green()
+    )
+    if cp is not None:
+        embed.add_field(name="CP", value=f"`{cp}`", inline=True)
+    if hp is not None:
+        embed.add_field(name="HP", value=f"`{hp}`", inline=True)
+    if candy:
+        embed.add_field(name="Candy Family", value=f"`{candy}`", inline=True)
+    if explanation:
+        embed.set_footer(text=explanation)
+
+    embed.set_thumbnail(url=image.url)
+    await interaction.followup.send(embed=embed, ephemeral=not visible)
+
 
 
 def main():
