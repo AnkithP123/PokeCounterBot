@@ -87,29 +87,55 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
     """
     Extracts the Pokémon CP value from a Pokémon GO screenshot.
     Uses multi-thresholding, dual blue/grayscale channel analysis,
-    and frequency voting.
+    tiered crop inspection, and frequency voting.
     """
     img = _load_image(image_input)
     h, w = img.shape[:2]
 
     # Crop bounding boxes for the CP banner:
-    # y: 4.0% to 12.0%, x: 20% to 80% (works for both cropped and full-screen captures)
+    # 1. Standard banner window (covers standard full-screen and common cropped views)
+    # 2. Tight vertical window (cuts off balloon strings or high/low background artifacts)
+    # 3. Wider banner window (handles varying status-bar heights and wide layouts)
     crops = [
         (int(h * 0.040), int(h * 0.120), int(w * 0.20), int(w * 0.80)),
+        (int(h * 0.048), int(h * 0.098), int(w * 0.20), int(w * 0.80)),
         (int(h * 0.030), int(h * 0.130), int(w * 0.18), int(w * 0.82))
     ]
 
     whitelist = "CPcp0123456789 \n"
 
+    # Pass 1: Look for explicit CP prefix (e.g. "CP 11", "cp42") across crops
     for (y1, y2, x1, x2) in crops:
         crop = img[y1:y2, x1:x2]
         if crop.size == 0:
             continue
 
         all_found: List[Tuple[bool, int]] = []
+        channels = [crop[:, :, 0], cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)]
 
-        # Analyze both Blue channel (isolates white text from yellow/gold coins & green sprites)
-        # and standard Grayscale channel
+        for chan in channels:
+            scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
+            for th in [245, 240, 235, 230, 220, 210]:
+                _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
+                bordered = cv2.copyMakeBorder(b, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                for psm in (6, 7):
+                    try:
+                        txt = pytesseract.image_to_string(bordered, config=f"--psm {psm} -c tessedit_char_whitelist={whitelist}").strip()
+                        all_found.extend(_parse_all_candidates(txt))
+                    except Exception:
+                        pass
+
+        prefixed = [c[1] for c in all_found if c[0]]
+        if prefixed:
+            return Counter(prefixed).most_common(1)[0][0]
+
+    # Pass 2: Fallback to standalone integer frequency voting if no explicit CP prefix was read
+    for (y1, y2, x1, x2) in crops:
+        crop = img[y1:y2, x1:x2]
+        if crop.size == 0:
+            continue
+
+        all_found: List[Tuple[bool, int]] = []
         channels = [crop[:, :, 0], cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)]
 
         for chan in channels:
@@ -125,11 +151,7 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
                         pass
 
         if all_found:
-            # If candidates with explicit CP prefix exist, vote exclusively among them
-            prefixed = [c[1] for c in all_found if c[0]]
-            if prefixed:
-                return Counter(prefixed).most_common(1)[0][0]
-            else:
-                return Counter([c[1] for c in all_found]).most_common(1)[0][0]
+            return Counter([c[1] for c in all_found]).most_common(1)[0][0]
 
     return None
+
