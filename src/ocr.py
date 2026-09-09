@@ -58,13 +58,13 @@ def _parse_all_candidates(text: str) -> List[Tuple[bool, int]]:
 
     results = []
     # Priority 1: Match with explicit 2-letter CP prefix
-    for m in re.finditer(r'(?:cp|ce|cep|ep)\s*[:\-\s]?\s*(\d{2,4})\b', text, re.IGNORECASE):
+    for m in re.finditer(r'(?:cp|ce|cep|ep)\s*[:\-\s]?\s*([1-9]\d{1,3})\b', text, re.IGNORECASE):
         v = int(m.group(1))
         if 10 <= v <= 6000:
             results.append((True, v))
 
     # Priority 2: Standalone integer tokens (also matching when attached to single letter like c15 or p15)
-    for m in re.finditer(r'(?:^|[^\d])(\d{2,4})(?:[^\d]|$)', text):
+    for m in re.finditer(r'(?:^|[^\d])([1-9]\d{1,3})(?:[^\d]|$)', text):
         v = int(m.group(1))
         if 10 <= v <= 6000:
             results.append((False, v))

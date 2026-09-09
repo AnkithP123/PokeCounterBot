@@ -16,6 +16,7 @@ IMG_PIKACHU_RETINA_PATH = os.path.join(SAMPLES_DIR, "cp11_flying_pikachu_retina.
 IMG_ZACIAN_PATH = os.path.join(SAMPLES_DIR, "cp5629_zacian.png")
 IMG_CLEFAIRY_PATH = os.path.join(SAMPLES_DIR, "cp15_clefairy.png")
 IMG_GIMMIGHOUL_12_PATH = os.path.join(SAMPLES_DIR, "cp12_gimmighoul_zard.png")
+IMG_SWAMPERT_PATH = os.path.join(SAMPLES_DIR, "cp3362_swampert.png")
 
 
 class TestOCR(unittest.TestCase):
@@ -62,6 +63,10 @@ class TestOCR(unittest.TestCase):
     def test_extract_cp_gimmighoul_12_zard(self):
         """Verify that Zard's Gimmighoul 12 screenshot resolves to CP 12 instead of 22."""
         self.assertEqual(extract_cp_from_image(IMG_GIMMIGHOUL_12_PATH), 12)
+
+    def test_extract_cp_swampert_3362(self):
+        """Verify that Shadow Swampert screenshot resolves to CP 3362 instead of truncated 62."""
+        self.assertEqual(extract_cp_from_image(IMG_SWAMPERT_PATH), 3362)
 
 
 
