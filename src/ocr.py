@@ -47,27 +47,27 @@ def _load_image(image_input: Union[str, bytes, io.BytesIO, Image.Image, np.ndarr
     raise TypeError(f"Unsupported image input type: {type(image_input)}")
 
 
-def _parse_all_candidates(text: str) -> List[Tuple[bool, int, int]]:
+def _parse_all_candidates(text: str) -> List[Tuple[bool, int]]:
     """
     Finds all potential CP numbers in OCR text.
     Enforces valid Pokemon GO CP range: 10 <= CP <= 6000.
-    Returns a list of tuples: (has_cp_prefix: bool, value: int, digit_length: int)
+    Returns a list of tuples: (has_cp_prefix: bool, value: int)
     """
     if not text:
         return []
 
     results = []
-    # Priority 1: Match with explicit CP / ce / cp / c / p prefix
-    for m in re.finditer(r'(?:cp|ce|cep|c|p)\s*[:\-\s]?\s*(\d+)\b', text, re.IGNORECASE):
+    # Priority 1: Match with explicit CP / ce / cep / ep prefix
+    for m in re.finditer(r'(?:cp|ce|cep|ep)\s*[:\-\s]?\s*(\d+)\b', text, re.IGNORECASE):
         v = int(m.group(1))
         if 10 <= v <= 6000:
-            results.append((True, v, len(m.group(1))))
+            results.append((True, v))
 
     # Priority 2: Standalone integer tokens
     for token in re.findall(r'\b\d+\b', text):
         v = int(token)
         if 10 <= v <= 6000:
-            results.append((False, v, len(token)))
+            results.append((False, v))
 
     return results
 
@@ -77,22 +77,26 @@ def _parse_cp_text(text: str) -> Optional[int]:
     cands = _parse_all_candidates(text)
     if not cands:
         return None
-    cands.sort(key=lambda x: (x[0], x[2]), reverse=True)
+    prefixed = [c[1] for c in cands if c[0]]
+    if prefixed:
+        return prefixed[0]
     return cands[0][1]
 
 
 def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image, np.ndarray]) -> Optional[int]:
     """
     Extracts the Pokémon CP value from a Pokémon GO screenshot.
-    Uses multi-thresholding, status-bar exclusion, and candidate scoring.
+    Uses multi-thresholding, dual blue/grayscale channel analysis,
+    and frequency voting.
     """
     img = _load_image(image_input)
     h, w = img.shape[:2]
 
-    # Crop bounding boxes: strictly below status bar (y >= 4.5%) to avoid battery/clock numbers
+    # Crop bounding boxes for the CP banner:
+    # y: 4.0% to 12.0%, x: 20% to 80% (works for both cropped and full-screen captures)
     crops = [
-        (int(h * 0.045), int(h * 0.125), int(w * 0.18), int(w * 0.82)),
-        (int(h * 0.040), int(h * 0.135), int(w * 0.15), int(w * 0.85))
+        (int(h * 0.040), int(h * 0.120), int(w * 0.20), int(w * 0.80)),
+        (int(h * 0.030), int(h * 0.130), int(w * 0.18), int(w * 0.82))
     ]
 
     whitelist = "CPcp0123456789 \n"
@@ -102,46 +106,30 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
         if crop.size == 0:
             continue
 
-        scaled = cv2.resize(crop, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-        gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
+        all_found: List[Tuple[bool, int]] = []
 
-        all_found: List[Tuple[bool, int, int]] = []
+        # Analyze both Blue channel (isolates white text from yellow/gold coins & green sprites)
+        # and standard Grayscale channel
+        channels = [crop[:, :, 0], cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)]
 
-        # High thresholds isolate pure white font from colored backgrounds/event illustrations
-        thresholds = [245, 240, 235, 230, 220]
-        for th in thresholds:
-            _, b = cv2.threshold(gray, th, 255, cv2.THRESH_BINARY_INV)
-            bordered = cv2.copyMakeBorder(b, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-            for psm in (6, 7):
-                config = f"--psm {psm} -c tessedit_char_whitelist={whitelist}"
-                try:
-                    txt = pytesseract.image_to_string(bordered, config=config).strip()
-                except Exception:
-                    continue
-                all_found.extend(_parse_all_candidates(txt))
-
-        # Otsu thresholding as robust adaptive fallback
-        _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        bordered = cv2.copyMakeBorder(otsu, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-        try:
-            txt = pytesseract.image_to_string(bordered, config=f"--psm 6 -c tessedit_char_whitelist={whitelist}").strip()
-            all_found.extend(_parse_all_candidates(txt))
-        except Exception:
-            pass
+        for chan in channels:
+            scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
+            for th in [245, 240, 235, 230, 220, 210]:
+                _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
+                bordered = cv2.copyMakeBorder(b, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                for psm in (6, 7):
+                    try:
+                        txt = pytesseract.image_to_string(bordered, config=f"--psm {psm} -c tessedit_char_whitelist={whitelist}").strip()
+                        all_found.extend(_parse_all_candidates(txt))
+                    except Exception:
+                        pass
 
         if all_found:
-            # Score candidates:
-            # 1. Prefer candidate with explicit CP prefix
-            prefixed = [c for c in all_found if c[0]]
-            pool = prefixed if prefixed else all_found
-
-            # 2. Sort by prefix presence, then by digit length descending
-            pool.sort(key=lambda x: (x[0], x[2]), reverse=True)
-            max_len = pool[0][2]
-
-            # 3. Take the most frequently detected value among the longest matches
-            best_vals = [c[1] for c in pool if c[2] == max_len]
-            most_common = Counter(best_vals).most_common(1)[0][0]
-            return most_common
+            # If candidates with explicit CP prefix exist, vote exclusively among them
+            prefixed = [c[1] for c in all_found if c[0]]
+            if prefixed:
+                return Counter(prefixed).most_common(1)[0][0]
+            else:
+                return Counter([c[1] for c in all_found]).most_common(1)[0][0]
 
     return None
