@@ -2,7 +2,7 @@ import os
 import sys
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Dict
 
 import discord
 from discord.ext import commands
@@ -34,7 +34,9 @@ intents.message_content = True
 intents.guild_messages = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-game = PokeCounterGame(starting_cp=STARTING_CP, allow_consecutive_counts=ALLOW_CONSECUTIVE)
+
+# Multi-server support: Each channel maintains its own independent counting game
+games: Dict[int, PokeCounterGame] = {}
 
 
 def is_target_channel(channel: discord.abc.GuildChannel) -> bool:
@@ -44,23 +46,37 @@ def is_target_channel(channel: discord.abc.GuildChannel) -> bool:
     return getattr(channel, "name", "").lower() == TARGET_CHANNEL_NAME
 
 
+def get_game_for_channel(channel_id: int) -> PokeCounterGame:
+    """Gets or initializes the counting game state for a specific channel."""
+    if channel_id not in games:
+        games[channel_id] = PokeCounterGame(
+            starting_cp=STARTING_CP,
+            allow_consecutive_counts=ALLOW_CONSECUTIVE
+        )
+    return games[channel_id]
+
+
 async def sync_game_state_from_channel(channel: discord.TextChannel) -> None:
     """Recovers the current game state by inspecting the bot's past messages in the channel."""
-    logger.info("Syncing game state from channel #%s (ID: %s)...", channel.name, channel.id)
+    game = get_game_for_channel(channel.id)
+    guild_name = channel.guild.name if channel.guild else "Unknown"
+    logger.info("Syncing game state for [%s] #%s (ID: %s)...", guild_name, channel.name, channel.id)
     bot_messages = []
     try:
         async for msg in channel.history(limit=60):
             if msg.author.id == bot.user.id:
                 bot_messages.append(msg)
-        
+
         game.recover_from_history(bot_messages)
         logger.info(
-            "Game state synced successfully! Current CP: %s, Next expected CP: %s",
+            "Synced [%s] #%s: Current CP: %s, Next expected CP: %s",
+            guild_name,
+            channel.name,
             game.current_cp,
             game.next_expected_cp
         )
     except Exception as e:
-        logger.error("Failed to read channel history for state recovery: %s", e)
+        logger.error("Failed to read channel history for [%s] #%s: %s", guild_name, channel.name, e)
 
 
 @bot.event
@@ -74,26 +90,34 @@ async def on_ready():
         ALLOW_CONSECUTIVE
     )
 
-    # Sync state for all matching text channels
-    found = False
+    # Sync state for all matching text channels across all joined servers
+    target_channels_found = 0
     for guild in bot.guilds:
         for channel in guild.text_channels:
             if is_target_channel(channel):
-                found = True
+                target_channels_found += 1
                 await sync_game_state_from_channel(channel)
-                break
 
-    if not found:
-        logger.warning(
-            "Could not find target channel '%s' (or ID %s) in any connected servers!",
-            TARGET_CHANNEL_NAME,
-            TARGET_CHANNEL_ID
-        )
+    logger.info(
+        "PokeCounterBot is ready across %d servers (monitoring %d #%s channels)",
+        len(bot.guilds),
+        target_channels_found,
+        TARGET_CHANNEL_NAME
+    )
+
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    """When invited to a new server, automatically discover and sync any #poke-counter channel."""
+    logger.info("Joined new guild: %s (ID: %s)", guild.name, guild.id)
+    for channel in guild.text_channels:
+        if is_target_channel(channel):
+            await sync_game_state_from_channel(channel)
 
 
 @bot.event
 async def on_message(message: discord.Message):
-    # Ignore own messages or bot messages
+    # Ignore own messages or other bot messages
     if message.author.bot or message.author == bot.user:
         return
 
@@ -110,22 +134,24 @@ async def on_message(message: discord.Message):
     ]
 
     if not image_attachments:
-        # User spoke in the channel without an image attachment
+        # User sent text without an image attachment
         await bot.process_commands(message)
         return
 
-    # Process first image attachment
     attachment = image_attachments[0]
+    game = get_game_for_channel(message.channel.id)
+
     logger.info(
-        "Processing image from %s (file: %s, size: %d bytes)",
+        "Processing image from %s in [%s] #%s (file: %s, size: %d bytes)",
         message.author.name,
+        message.guild.name if message.guild else "DM",
+        message.channel.name,
         attachment.filename,
         attachment.size
     )
 
     try:
         image_bytes = await attachment.read()
-        # Run OCR in background thread so event loop is not blocked
         extracted_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
     except Exception as e:
         logger.error("Error reading/processing image attachment: %s", e)
@@ -142,7 +168,9 @@ async def on_message(message: discord.Message):
         return
 
     logger.info(
-        "Extracted CP: %d from user %s. Next expected: %d",
+        "[%s #%s] Extracted CP: %d from user %s. Next expected: %d",
+        message.guild.name if message.guild else "",
+        message.channel.name,
         extracted_cp,
         message.author.name,
         game.next_expected_cp
@@ -161,16 +189,17 @@ async def on_message(message: discord.Message):
 
 @bot.command(name="count_status", aliases=["cp_status", "count"])
 async def cmd_count_status(ctx: commands.Context):
-    """Replies with the current counting status."""
+    """Replies with the current counting status for this channel."""
     if not is_target_channel(ctx.channel):
         return
 
-    # Resync from history to guarantee freshness
     await sync_game_state_from_channel(ctx.channel)
+    game = get_game_for_channel(ctx.channel.id)
     current = game.current_cp if game.current_cp is not None else "None (Game not started or reset)"
     expected = game.next_expected_cp
     await ctx.send(
         f"📊 **PokeCounter Status**\n"
+        f"• Server: **{ctx.guild.name}**\n"
         f"• Current Count: `{current}`\n"
         f"• Next Expected CP: `{expected}`\n"
         f"• Reset Base: `{game.starting_cp}`"
