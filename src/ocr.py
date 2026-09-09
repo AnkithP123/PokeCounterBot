@@ -114,14 +114,19 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
 
     whitelist = "CPcp0123456789 \n"
 
-    # Pass 1: Look for explicit CP prefix (e.g. "CP 11", "cp42") across crops
+    # Pass 1: Look for explicit CP prefix (e.g. "CP 11", "cp5629") across crops
     for (y1, y2, x1, x2) in crops:
         crop = img[y1:y2, x1:x2]
         if crop.size == 0:
             continue
 
         all_found: List[Tuple[bool, int]] = []
-        channels = [crop[:, :, 0], cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)]
+        # Multi-channel decomposition:
+        # 1. Blue channel: isolator for yellow/green sprites & gold coin backgrounds
+        # 2. Min(B,G,R): isolator for pure white CP text against purple/blue sky and backgrounds (e.g. Zacian)
+        # 3. Grayscale: standard luminance
+        min_bgr = np.minimum(crop[:, :, 0], np.minimum(crop[:, :, 1], crop[:, :, 2]))
+        channels = [crop[:, :, 0], min_bgr, cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)]
 
         for chan in channels:
             scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
@@ -137,7 +142,9 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
 
         prefixed = [c[1] for c in all_found if c[0]]
         if prefixed:
-            return Counter(prefixed).most_common(1)[0][0]
+            # Sort by longest candidate first, then frequency (e.g. 5629 beats 62)
+            counts = Counter(prefixed)
+            return sorted(counts.keys(), key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
 
     # Pass 2: Fallback to standalone integer frequency voting if no explicit CP prefix was read
     for (y1, y2, x1, x2) in crops:
@@ -146,7 +153,8 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
             continue
 
         all_found: List[Tuple[bool, int]] = []
-        channels = [crop[:, :, 0], cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)]
+        min_bgr = np.minimum(crop[:, :, 0], np.minimum(crop[:, :, 1], crop[:, :, 2]))
+        channels = [crop[:, :, 0], min_bgr, cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)]
 
         for chan in channels:
             scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)

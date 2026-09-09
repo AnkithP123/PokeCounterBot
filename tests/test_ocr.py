@@ -13,6 +13,7 @@ IMG_42_PATH = os.path.join(SAMPLES_DIR, "cp42_gimmighoul.png")
 IMG_475_PATH = os.path.join(SAMPLES_DIR, "cp475_gimmighoul.png")
 IMG_PIKACHU_PATH = os.path.join(SAMPLES_DIR, "cp11_flying_pikachu.png")
 IMG_PIKACHU_RETINA_PATH = os.path.join(SAMPLES_DIR, "cp11_flying_pikachu_retina.png")
+IMG_ZACIAN_PATH = os.path.join(SAMPLES_DIR, "cp5629_zacian.png")
 
 
 class TestOCR(unittest.TestCase):
@@ -47,6 +48,11 @@ class TestOCR(unittest.TestCase):
     def test_extract_cp_flying_pikachu_retina_11(self):
         """Verify that full-resolution iPhone Retina Flying Pikachu resolves to CP 11."""
         self.assertEqual(extract_cp_from_image(IMG_PIKACHU_RETINA_PATH), 11)
+
+    def test_extract_cp_zacian_5629(self):
+        """Verify that Zacian on violet sky resolves to CP 5629 instead of truncated 62."""
+        self.assertEqual(extract_cp_from_image(IMG_ZACIAN_PATH), 5629)
+
 
 
 
