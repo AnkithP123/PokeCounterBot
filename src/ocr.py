@@ -5,7 +5,8 @@ import cv2
 import numpy as np
 import pytesseract
 from PIL import Image
-from typing import Optional, Union
+from typing import Optional, Union, List, Tuple
+from collections import Counter
 
 # Configure custom tesseract path if set in environment
 TESSERACT_CMD = os.getenv("TESSERACT_CMD")
@@ -46,47 +47,53 @@ def _load_image(image_input: Union[str, bytes, io.BytesIO, Image.Image, np.ndarr
     raise TypeError(f"Unsupported image input type: {type(image_input)}")
 
 
-def _parse_cp_text(text: str) -> Optional[int]:
+def _parse_all_candidates(text: str) -> List[Tuple[bool, int, int]]:
     """
-    Parses CP number from OCR text.
-    Handles 'CP 10', 'CP10', 'ce10', 'cp 11', 'cP11', etc.
+    Finds all potential CP numbers in OCR text.
+    Returns a list of tuples: (has_cp_prefix: bool, value: int, digit_length: int)
     """
     if not text:
+        return []
+
+    results = []
+    # Priority 1: Match with explicit CP / ce / cp / c / p prefix
+    for m in re.finditer(r'(?:cp|ce|cep|c|p)\s*[:\-\s]?\s*(\d+)\b', text, re.IGNORECASE):
+        v = int(m.group(1))
+        if 10 <= v <= 6000:
+            results.append((True, v, len(m.group(1))))
+
+    # Priority 2: Standalone integer tokens
+    for token in re.findall(r'\b\d+\b', text):
+        v = int(token)
+        if 10 <= v <= 6000:
+            results.append((False, v, len(token)))
+
+    return results
+
+
+def _parse_cp_text(text: str) -> Optional[int]:
+    """Helper for direct text parsing tests."""
+    cands = _parse_all_candidates(text)
+    if not cands:
         return None
-
-    # Priority 1: Match with explicit CP / ce prefix
-    # Matches 'CP 10', 'ce10', 'cP11', 'CP-1500', etc.
-    m = re.search(r'(?:cp|ce|cep|c|p)\s*[:\-\s]?\s*(\d+)\b', text, re.IGNORECASE)
-    if m:
-        val = int(m.group(1))
-        if 10 <= val <= 6000:
-            return val
-
-    # Priority 2: Standalone integer token
-    tokens = re.findall(r'\b\d+\b', text)
-    for token in tokens:
-        val = int(token)
-        if 10 <= val <= 6000:
-            return val
-
-    return None
+    # Prioritize prefixed, then longest digit length
+    cands.sort(key=lambda x: (x[0], x[2]), reverse=True)
+    return cands[0][1]
 
 
 def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image, np.ndarray]) -> Optional[int]:
     """
     Extracts the Pokémon CP value from a Pokémon GO screenshot.
-    Returns the integer CP value or None if not detected.
+    Uses multi-thresholding and candidate scoring to handle complex Pokémon
+    models, horns, sparkles, and varying sky backgrounds.
     """
     img = _load_image(image_input)
     h, w = img.shape[:2]
 
     # Crop bounding box candidates for the CP region:
-    # In standard mobile screens (aspect ratios 16:9 to 21:9), CP sits below the status bar:
-    # y: ~4.0% to 12.5%, x: ~20% to 80%
+    # Standard mobile screens: y: ~4.0% to 13.0%, x: ~18% to 82%
     crops = [
-        # Standard primary crop
-        (int(h * 0.040), int(h * 0.125), int(w * 0.20), int(w * 0.80)),
-        # Slightly wider and taller crop for edge cases or tablet screens
+        (int(h * 0.040), int(h * 0.130), int(w * 0.18), int(w * 0.82)),
         (int(h * 0.030), int(h * 0.150), int(w * 0.15), int(w * 0.85))
     ]
 
@@ -97,46 +104,46 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
         if crop.size == 0:
             continue
 
-        # Scale up 2.5x to improve OCR on small font sizes
         scaled = cv2.resize(crop, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY)
 
-        # Generate preprocessing variations:
-        variations = []
+        all_found: List[Tuple[bool, int, int]] = []
 
-        # 1. Otsu threshold (inverted: white text becomes black on white)
-        _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        variations.append(otsu)
-
-        # 2. Fixed bright threshold (useful when background is bright daytime/sunset sky)
-        _, th220 = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY_INV)
-        variations.append(th220)
-
-        # 3. Intermediate threshold
-        _, th200 = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
-        variations.append(th200)
-
-        # 4. Adaptive thresholding
-        adapt = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 25, 4
-        )
-        variations.append(adapt)
-
-        for processed in variations:
-            # Add white border around the image so edge characters aren't cut
-            bordered = cv2.copyMakeBorder(
-                processed, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255]
-            )
-
-            for psm in (6, 7, 8):
+        # High thresholds isolate pure white font (>220-245) from colored Pokémon elements (horns, whiskers, clouds)
+        thresholds = [240, 235, 230, 220, 210]
+        for th in thresholds:
+            _, b = cv2.threshold(gray, th, 255, cv2.THRESH_BINARY_INV)
+            bordered = cv2.copyMakeBorder(b, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+            for psm in (6, 7):
                 config = f"--psm {psm} -c tessedit_char_whitelist={whitelist}"
                 try:
-                    text = pytesseract.image_to_string(bordered, config=config).strip()
+                    txt = pytesseract.image_to_string(bordered, config=config).strip()
                 except Exception:
                     continue
+                all_found.extend(_parse_all_candidates(txt))
 
-                cp = _parse_cp_text(text)
-                if cp is not None:
-                    return cp
+        # Otsu thresholding as robust adaptive fallback
+        _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        bordered = cv2.copyMakeBorder(otsu, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+        try:
+            txt = pytesseract.image_to_string(bordered, config=f"--psm 6 -c tessedit_char_whitelist={whitelist}").strip()
+            all_found.extend(_parse_all_candidates(txt))
+        except Exception:
+            pass
+
+        if all_found:
+            # Score candidates:
+            # 1. Prefer candidate with explicit CP prefix
+            prefixed = [c for c in all_found if c[0]]
+            pool = prefixed if prefixed else all_found
+
+            # 2. Sort by prefix presence, then by digit length descending (e.g. 2691 > 269)
+            pool.sort(key=lambda x: (x[0], x[2]), reverse=True)
+            max_len = pool[0][2]
+
+            # 3. Take the most frequently detected value among the longest matches
+            best_vals = [c[1] for c in pool if c[2] == max_len]
+            most_common = Counter(best_vals).most_common(1)[0][0]
+            return most_common
 
     return None

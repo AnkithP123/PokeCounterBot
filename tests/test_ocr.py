@@ -7,6 +7,7 @@ from src.ocr import extract_cp_from_image, _parse_cp_text
 SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "samples")
 IMG_10_PATH = os.path.join(SAMPLES_DIR, "cp10_fletchling.png")
 IMG_11_PATH = os.path.join(SAMPLES_DIR, "cp11_froakie.png")
+IMG_2691_PATH = os.path.join(SAMPLES_DIR, "cp2691_rayquaza.png")
 
 
 class TestOCR(unittest.TestCase):
@@ -19,6 +20,11 @@ class TestOCR(unittest.TestCase):
         """Verify that Froakie screenshot resolves to CP 11."""
         cp = extract_cp_from_image(IMG_11_PATH)
         self.assertEqual(cp, 11)
+
+    def test_extract_cp_rayquaza_2691(self):
+        """Verify that Rayquaza screenshot with horns and appraisal resolves to CP 2691."""
+        cp = extract_cp_from_image(IMG_2691_PATH)
+        self.assertEqual(cp, 2691)
 
     def test_extract_cp_from_bytes(self):
         """Verify that loading image from bytes and BytesIO works identically."""
@@ -45,7 +51,6 @@ class TestOCR(unittest.TestCase):
         self.assertEqual(_parse_cp_text("cP 1500"), 1500)
         self.assertEqual(_parse_cp_text("CP-250"), 250)
         self.assertIsNone(_parse_cp_text("No CP here"))
-        # Out of reasonable Pokemon GO CP range
         self.assertIsNone(_parse_cp_text("CP 9999999"))
 
 
