@@ -184,7 +184,8 @@ async def on_message(message: discord.Message):
     else:
         await message.add_reaction("❌")
 
-    await message.channel.send(response_text)
+    # Reply directly to the user's screenshot message without pinging them
+    await message.reply(response_text, mention_author=False)
     await bot.process_commands(message)
 
 

@@ -72,13 +72,14 @@ class PokeCounterGame:
         Returns:
             (is_correct, response_message)
         """
+        is_consecutive = (self.last_user_id is not None and user_id == self.last_user_id)
+
         # Check consecutive count rule if disallowed
-        if not self.allow_consecutive_counts and self.last_user_id is not None:
-            if user_id == self.last_user_id:
-                self.current_cp = None
-                self.last_user_id = None
-                msg = f"{extracted_cp} ❌ You cannot count twice in a row! Restart at {self.starting_cp}."
-                return False, msg
+        if not self.allow_consecutive_counts and is_consecutive:
+            self.current_cp = None
+            self.last_user_id = None
+            msg = f"{extracted_cp} ❌ You cannot count twice in a row! Restart at {self.starting_cp}."
+            return False, msg
 
         expected = self.next_expected_cp
 
@@ -86,6 +87,9 @@ class PokeCounterGame:
             # Correct count!
             self.current_cp = extracted_cp
             self.last_user_id = user_id
+
+            if is_consecutive and self.allow_consecutive_counts:
+                return True, f"{extracted_cp} ✅\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*"
             return True, f"{extracted_cp} ✅"
         else:
             # Wrong count! Reset state

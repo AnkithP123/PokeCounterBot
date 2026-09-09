@@ -18,12 +18,20 @@ class TestPokeCounterGame(unittest.TestCase):
         self.assertEqual(game.current_cp, 10)
         self.assertEqual(game.next_expected_cp, 11)
 
-        # Second count: 11
+        # Second count: 11 by user 2
         ok, msg = game.process_count(user_id=2, extracted_cp=11)
         self.assertTrue(ok)
         self.assertEqual(msg, "11 ✅")
         self.assertEqual(game.current_cp, 11)
         self.assertEqual(game.next_expected_cp, 12)
+
+        # Third count: 12 by user 2 again (consecutive) -> succeeds with warning notice
+        ok, msg = game.process_count(user_id=2, extracted_cp=12)
+        self.assertTrue(ok)
+        self.assertIn("12 ✅", msg)
+        self.assertIn("⚠️ *Notice: Counting twice in a row will be disabled in the future.*", msg)
+        self.assertEqual(game.current_cp, 12)
+        self.assertEqual(game.next_expected_cp, 13)
 
     def test_wrong_number_resets_game(self):
         game = PokeCounterGame(starting_cp=10)
