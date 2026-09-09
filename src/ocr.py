@@ -114,6 +114,11 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
 
     whitelist = "CPcp0123456789 \n"
 
+    # Multi-channel decomposition:
+    # 1. Blue channel: isolates white text from yellow/gold coin & green backgrounds
+    # 2. Min(B,G,R): isolates pure white CP text from purple/blue skies & colorful event backgrounds
+    # (Grayscale is redundant when both Blue and Min(B,G,R) are evaluated)
+
     # Pass 1: Look for explicit CP prefix (e.g. "CP 11", "cp5629") across crops
     for (y1, y2, x1, x2) in crops:
         crop = img[y1:y2, x1:x2]
@@ -121,18 +126,14 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
             continue
 
         all_found: List[Tuple[bool, int]] = []
-        # Multi-channel decomposition:
-        # 1. Blue channel: isolator for yellow/green sprites & gold coin backgrounds
-        # 2. Min(B,G,R): isolator for pure white CP text against purple/blue sky and backgrounds (e.g. Zacian)
-        # 3. Grayscale: standard luminance
         min_bgr = np.minimum(crop[:, :, 0], np.minimum(crop[:, :, 1], crop[:, :, 2]))
-        channels = [crop[:, :, 0], min_bgr, cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)]
+        channels = [crop[:, :, 0], min_bgr]
 
         for chan in channels:
             scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
             for th in [245, 240, 235, 230, 220, 210]:
                 _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
-                bordered = cv2.copyMakeBorder(b, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                bordered = cv2.copyMakeBorder(b, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
                 for psm in (6, 7):
                     try:
                         txt = pytesseract.image_to_string(bordered, config=f"--psm {psm} -c tessedit_char_whitelist={whitelist}").strip()
@@ -154,13 +155,13 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
 
         all_found: List[Tuple[bool, int]] = []
         min_bgr = np.minimum(crop[:, :, 0], np.minimum(crop[:, :, 1], crop[:, :, 2]))
-        channels = [crop[:, :, 0], min_bgr, cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)]
+        channels = [crop[:, :, 0], min_bgr]
 
         for chan in channels:
             scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
             for th in [245, 240, 235, 230, 220, 210]:
                 _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
-                bordered = cv2.copyMakeBorder(b, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                bordered = cv2.copyMakeBorder(b, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
                 for psm in (6, 7):
                     try:
                         txt = pytesseract.image_to_string(bordered, config=f"--psm {psm} -c tessedit_char_whitelist={whitelist}").strip()
