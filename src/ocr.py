@@ -57,15 +57,15 @@ def _parse_all_candidates(text: str) -> List[Tuple[bool, int]]:
         return []
 
     results = []
-    # Priority 1: Match with explicit CP / ce / cep / ep prefix
-    for m in re.finditer(r'(?:cp|ce|cep|ep)\s*[:\-\s]?\s*(\d+)\b', text, re.IGNORECASE):
+    # Priority 1: Match with explicit 2-letter CP prefix
+    for m in re.finditer(r'(?:cp|ce|cep|ep)\s*[:\-\s]?\s*(\d{2,4})\b', text, re.IGNORECASE):
         v = int(m.group(1))
         if 10 <= v <= 6000:
             results.append((True, v))
 
-    # Priority 2: Standalone integer tokens
-    for token in re.findall(r'\b\d+\b', text):
-        v = int(token)
+    # Priority 2: Standalone integer tokens (also matching when attached to single letter like c15 or p15)
+    for m in re.finditer(r'(?:^|[^\d])(\d{2,4})(?:[^\d]|$)', text):
+        v = int(m.group(1))
         if 10 <= v <= 6000:
             results.append((False, v))
 
@@ -128,7 +128,7 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
         prefixed: List[int] = []
         unprefixed: List[int] = []
 
-        for th in [240, 230, 220, 210]:
+        for th in [245, 240, 230, 220, 210]:
             for chan in channels:
                 scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
                 _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
@@ -152,8 +152,8 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
             # Sort by longest candidate first, then frequency (e.g. 5629 beats 62)
             counts = Counter(prefixed)
             return sorted(counts.keys(), key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
-        elif unprefixed and len(unprefixed) >= 3:
-            # Fallback for sprites where CP letters are obscured (e.g. Gimmighoul gold coin rim)
+        elif unprefixed and len(unprefixed) >= 2:
+            # Fallback for sprites where CP letters are obscured or partially recognized (e.g. Clefairy, Gimmighoul)
             counts = Counter(unprefixed)
             if counts.most_common(1)[0][1] >= 2:
                 return counts.most_common(1)[0][0]
