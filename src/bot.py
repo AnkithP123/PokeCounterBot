@@ -250,6 +250,7 @@ async def cmd_count_status(interaction: discord.Interaction):
 
 
 @bot.tree.command(name="set_count", description="Set the current Pokémon count number for this server.")
+@discord.app_commands.default_permissions(manage_messages=True)
 @discord.app_commands.describe(
     number="The new current CP count (10-6000, or 0 to reset to base starting CP)"
 )
@@ -267,6 +268,17 @@ async def cmd_set_count(interaction: discord.Interaction, number: int):
             ephemeral=True
         )
         return
+
+    # Restrict to members who have permission to delete/manage messages in the target channel
+    user = interaction.user
+    if isinstance(user, discord.Member):
+        perms = target_channel.permissions_for(user)
+        if not perms.manage_messages:
+            await interaction.response.send_message(
+                "❌ You don't have permission to do this.",
+                ephemeral=True
+            )
+            return
 
     game = get_game_for_channel(target_channel.id)
 
@@ -307,6 +319,7 @@ async def cmd_set_count(interaction: discord.Interaction, number: int):
 
 
 @bot.tree.command(name="set_number", description="Alias for /set_count. Set the current count number.")
+@discord.app_commands.default_permissions(manage_messages=True)
 @discord.app_commands.describe(
     number="The new current CP count (10-6000, or 0 to reset to base starting CP)"
 )

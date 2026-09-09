@@ -118,12 +118,13 @@ class TestSlashCommands(unittest.TestCase):
         self.assertIn("valid image", interaction.response.send_message.call_args[0][0])
 
     def test_cmd_set_count_valid(self):
-        """Verify /set_count updates the current count and broadcasts {number} ✅."""
+        """Verify /set_count updates the current count and broadcasts {number} ✅ when user has manage_messages."""
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
-        interaction.user = MagicMock()
-        interaction.user.mention = "<@123>"
+        user = MagicMock(spec=discord.Member)
+        user.mention = "<@123>"
+        interaction.user = user
 
         guild = MagicMock(spec=discord.Guild)
         guild.name = "PokeGuild"
@@ -133,6 +134,7 @@ class TestSlashCommands(unittest.TestCase):
         channel.name = TARGET_CHANNEL_NAME
         channel.guild = guild
         channel.send = AsyncMock()
+        channel.permissions_for.return_value.manage_messages = True
 
         interaction.guild = guild
         interaction.channel = channel
@@ -148,19 +150,47 @@ class TestSlashCommands(unittest.TestCase):
         msg = interaction.response.send_message.call_args[0][0]
         self.assertTrue(msg.startswith("50 ✅"))
 
+    def test_cmd_set_count_permission_denied(self):
+        """Verify /set_count rejects users who do not have permission to manage messages in the channel."""
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        user = MagicMock(spec=discord.Member)
+        user.mention = "<@123>"
+        interaction.user = user
+
+        guild = MagicMock(spec=discord.Guild)
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.id = 11112
+        channel.name = TARGET_CHANNEL_NAME
+        channel.mention = "<#11112>"
+        channel.guild = guild
+        channel.permissions_for.return_value.manage_messages = False
+
+        interaction.guild = guild
+        interaction.channel = channel
+
+        import asyncio
+        asyncio.run(cmd_set_count.callback(interaction, number=50))
+
+        interaction.response.send_message.assert_called_once()
+        self.assertIn("You don't have permission to do this.", interaction.response.send_message.call_args[0][0])
+
     def test_cmd_set_count_reset_zero(self):
         """Verify /set_count 0 resets the counter back to starting CP."""
         interaction = MagicMock(spec=discord.Interaction)
         interaction.response = MagicMock()
         interaction.response.send_message = AsyncMock()
-        interaction.user = MagicMock()
-        interaction.user.mention = "<@123>"
+        user = MagicMock(spec=discord.Member)
+        user.mention = "<@123>"
+        interaction.user = user
 
         guild = MagicMock(spec=discord.Guild)
         channel = MagicMock(spec=discord.TextChannel)
         channel.id = 22222
         channel.name = TARGET_CHANNEL_NAME
         channel.guild = guild
+        channel.permissions_for.return_value.manage_messages = True
 
         interaction.guild = guild
         interaction.channel = channel
@@ -188,6 +218,7 @@ class TestSlashCommands(unittest.TestCase):
         channel.id = 33333
         channel.name = TARGET_CHANNEL_NAME
         channel.guild = guild
+        channel.permissions_for.return_value.manage_messages = True
 
         interaction.guild = guild
         interaction.channel = channel
