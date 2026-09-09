@@ -151,8 +151,9 @@ async def on_message(message: discord.Message):
     )
 
     try:
-        image_bytes = await attachment.read()
-        extracted_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
+        async with message.channel.typing():
+            image_bytes = await attachment.read()
+            extracted_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
     except Exception as e:
         logger.error("Error reading/processing image attachment: %s", e)
         await message.add_reaction("⚠️")
