@@ -8,6 +8,7 @@ SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "samples")
 IMG_10_PATH = os.path.join(SAMPLES_DIR, "cp10_fletchling.png")
 IMG_11_PATH = os.path.join(SAMPLES_DIR, "cp11_froakie.png")
 IMG_2691_PATH = os.path.join(SAMPLES_DIR, "cp2691_rayquaza.png")
+IMG_1_PATH = os.path.join(SAMPLES_DIR, "cp1_tinkatink.png")
 
 
 class TestOCR(unittest.TestCase):
@@ -22,9 +23,14 @@ class TestOCR(unittest.TestCase):
         self.assertEqual(cp, 11)
 
     def test_extract_cp_rayquaza_2691(self):
-        """Verify that Rayquaza screenshot with horns and appraisal resolves to CP 2691."""
+        """Verify that Rayquaza screenshot resolves to CP 2691."""
         cp = extract_cp_from_image(IMG_2691_PATH)
         self.assertEqual(cp, 2691)
+
+    def test_extract_cp_tinkatink_1(self):
+        """Verify that Tinkatink screenshot resolves to CP 1."""
+        cp = extract_cp_from_image(IMG_1_PATH)
+        self.assertEqual(cp, 1)
 
     def test_extract_cp_from_bytes(self):
         """Verify that loading image from bytes and BytesIO works identically."""
@@ -46,6 +52,7 @@ class TestOCR(unittest.TestCase):
     def test_parse_cp_text(self):
         """Verify text parsing regex against common OCR variations."""
         self.assertEqual(_parse_cp_text("CP 10"), 10)
+        self.assertEqual(_parse_cp_text("CP 1"), 1)
         self.assertEqual(_parse_cp_text("cp10"), 10)
         self.assertEqual(_parse_cp_text("ce10"), 10)
         self.assertEqual(_parse_cp_text("cP 1500"), 1500)

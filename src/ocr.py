@@ -59,13 +59,14 @@ def _parse_all_candidates(text: str) -> List[Tuple[bool, int, int]]:
     # Priority 1: Match with explicit CP / ce / cp / c / p prefix
     for m in re.finditer(r'(?:cp|ce|cep|c|p)\s*[:\-\s]?\s*(\d+)\b', text, re.IGNORECASE):
         v = int(m.group(1))
-        if 10 <= v <= 6000:
+        # Supports values down to 1 (handles CP 1 glitch/custom/special mons)
+        if 1 <= v <= 6000:
             results.append((True, v, len(m.group(1))))
 
     # Priority 2: Standalone integer tokens
     for token in re.findall(r'\b\d+\b', text):
         v = int(token)
-        if 10 <= v <= 6000:
+        if 1 <= v <= 6000:
             results.append((False, v, len(token)))
 
     return results
@@ -76,7 +77,6 @@ def _parse_cp_text(text: str) -> Optional[int]:
     cands = _parse_all_candidates(text)
     if not cands:
         return None
-    # Prioritize prefixed, then longest digit length
     cands.sort(key=lambda x: (x[0], x[2]), reverse=True)
     return cands[0][1]
 
@@ -84,17 +84,15 @@ def _parse_cp_text(text: str) -> Optional[int]:
 def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image, np.ndarray]) -> Optional[int]:
     """
     Extracts the Pokémon CP value from a Pokémon GO screenshot.
-    Uses multi-thresholding and candidate scoring to handle complex Pokémon
-    models, horns, sparkles, and varying sky backgrounds.
+    Uses multi-thresholding, strict top status-bar exclusion, and candidate scoring.
     """
     img = _load_image(image_input)
     h, w = img.shape[:2]
 
-    # Crop bounding box candidates for the CP region:
-    # Standard mobile screens: y: ~4.0% to 13.0%, x: ~18% to 82%
+    # Crop bounding boxes: strictly below status bar (y >= 4.5%) to avoid battery/clock numbers
     crops = [
-        (int(h * 0.040), int(h * 0.130), int(w * 0.18), int(w * 0.82)),
-        (int(h * 0.030), int(h * 0.150), int(w * 0.15), int(w * 0.85))
+        (int(h * 0.045), int(h * 0.125), int(w * 0.18), int(w * 0.82)),
+        (int(h * 0.040), int(h * 0.135), int(w * 0.15), int(w * 0.85))
     ]
 
     whitelist = "CPcp0123456789 \n"
@@ -109,7 +107,7 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
 
         all_found: List[Tuple[bool, int, int]] = []
 
-        # High thresholds isolate pure white font (>220-245) from colored Pokémon elements (horns, whiskers, clouds)
+        # High thresholds isolate pure white font from colored Pokémon elements (horns, whiskers, sky)
         thresholds = [240, 235, 230, 220, 210]
         for th in thresholds:
             _, b = cv2.threshold(gray, th, 255, cv2.THRESH_BINARY_INV)
@@ -137,7 +135,7 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
             prefixed = [c for c in all_found if c[0]]
             pool = prefixed if prefixed else all_found
 
-            # 2. Sort by prefix presence, then by digit length descending (e.g. 2691 > 269)
+            # 2. Sort by prefix presence, then by digit length descending
             pool.sort(key=lambda x: (x[0], x[2]), reverse=True)
             max_len = pool[0][2]
 
