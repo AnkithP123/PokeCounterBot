@@ -117,6 +117,8 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
     # Multi-channel decomposition:
     # 1. Blue channel: isolates white text from yellow/gold coin & green backgrounds
     # 2. Min(B,G,R): isolates pure white CP text from purple/blue skies & colorful event backgrounds
+
+    # Pass 1: Prioritize explicit CP-prefixed matches (e.g. "CP 12", "CP 11", "cp5629") across crops
     for (y1, y2, x1, x2) in crops:
         crop = img[y1:y2, x1:x2]
         if crop.size == 0:
@@ -126,7 +128,6 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
         channels = [crop[:, :, 0], min_bgr]
 
         prefixed: List[int] = []
-        unprefixed: List[int] = []
 
         for th in [245, 240, 230, 220, 210]:
             for chan in channels:
@@ -139,8 +140,6 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
                         for is_p, v in _parse_all_candidates(txt):
                             if is_p:
                                 prefixed.append(v)
-                            else:
-                                unprefixed.append(v)
                     except Exception:
                         pass
 
@@ -152,8 +151,33 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
             # Sort by longest candidate first, then frequency (e.g. 5629 beats 62)
             counts = Counter(prefixed)
             return sorted(counts.keys(), key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
-        elif unprefixed and len(unprefixed) >= 2:
-            # Fallback for sprites where CP letters are obscured or partially recognized (e.g. Clefairy, Gimmighoul)
+
+    # Pass 2: Fallback for sprites where CP letters are obscured (e.g. Gimmighoul coin rim)
+    for (y1, y2, x1, x2) in crops:
+        crop = img[y1:y2, x1:x2]
+        if crop.size == 0:
+            continue
+
+        min_bgr = np.minimum(crop[:, :, 0], np.minimum(crop[:, :, 1], crop[:, :, 2]))
+        channels = [crop[:, :, 0], min_bgr]
+
+        unprefixed: List[int] = []
+
+        for th in [240, 230, 220]:
+            for chan in channels:
+                scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
+                _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
+                bordered = cv2.copyMakeBorder(b, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                for psm in (6, 7):
+                    try:
+                        txt = pytesseract.image_to_string(bordered, config=f"--psm {psm} -c tessedit_char_whitelist={whitelist}").strip()
+                        for is_p, v in _parse_all_candidates(txt):
+                            if not is_p:
+                                unprefixed.append(v)
+                    except Exception:
+                        pass
+
+        if unprefixed and len(unprefixed) >= 2:
             counts = Counter(unprefixed)
             if counts.most_common(1)[0][1] >= 2:
                 return counts.most_common(1)[0][0]
