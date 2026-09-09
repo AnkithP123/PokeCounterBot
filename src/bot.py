@@ -2,7 +2,7 @@ import os
 import sys
 import asyncio
 import logging
-from typing import Optional, Dict
+from typing import Optional, Dict, Set
 
 import discord
 from discord.ext import commands
@@ -49,6 +49,7 @@ bot = PokeCounterClient()
 
 # Multi-server support: Each channel maintains its own independent counting game
 games: Dict[int, PokeCounterGame] = {}
+synced_channels: Set[int] = set()
 
 
 def is_target_channel(channel: discord.abc.GuildChannel) -> bool:
@@ -85,11 +86,12 @@ async def sync_game_state_from_channel(channel: discord.TextChannel) -> None:
     logger.info("Syncing game state for [%s] #%s (ID: %s)...", guild_name, channel.name, channel.id)
     bot_messages = []
     try:
-        async for msg in channel.history(limit=60):
+        async for msg in channel.history(limit=200):
             if msg.author.id == bot.user.id:
                 bot_messages.append(msg)
 
         game.recover_from_history(bot_messages)
+        synced_channels.add(channel.id)
         logger.info(
             "Synced [%s] #%s: Current CP: %s, Next expected CP: %s",
             guild_name,
@@ -139,22 +141,33 @@ async def on_guild_join(guild: discord.Guild):
 
 def get_particle_placeholder() -> str:
     """
-    Returns an animated particle/sparkle emoji if available, or falls back to sparkles ✨.
-    Checks PARTICLES_EMOJI / LOADING_EMOJI env var first, then bot's guild emojis.
+    Returns the placeholder emoji:
+    Prioritizes :slow: as requested, or PARTICLES_EMOJI / LOADING_EMOJI env var,
+    or emojis matching 'slow', 'particle', 'sparkle', 'star', 'loading', or 'spinner'.
+    Falls back to ✨.
     """
     env_emoji = os.getenv("PARTICLES_EMOJI") or os.getenv("LOADING_EMOJI")
     if env_emoji:
         return env_emoji
 
-    # Search for an animated emoji matching particle, sparkle, star, loading, or spinner
+    # 1. Prioritize :slow: emoji (case-insensitive exact or partial match)
+    for emoji in bot.emojis:
+        if emoji.name.lower() == "slow":
+            return str(emoji)
+    for emoji in bot.emojis:
+        if "slow" in emoji.name.lower():
+            return str(emoji)
+
+    # 2. Search for animated emojis matching keywords (excluding dance/dittodance)
     keywords = ["particle", "sparkle", "star", "loading", "spinner"]
     for kw in keywords:
         for emoji in bot.emojis:
             if getattr(emoji, "animated", False) and kw in emoji.name.lower():
                 return str(emoji)
 
+    # Any animated emoji if none matched the keywords (excluding dance)
     for emoji in bot.emojis:
-        if getattr(emoji, "animated", False):
+        if getattr(emoji, "animated", False) and "dance" not in emoji.name.lower():
             return str(emoji)
 
     return "✨"
@@ -182,6 +195,10 @@ async def on_message(message: discord.Message):
         # User sent text without an image attachment
         await bot.process_commands(message)
         return
+
+    # Ensure channel history has been synced
+    if message.channel.id not in synced_channels:
+        await sync_game_state_from_channel(message.channel)
 
     attachment = image_attachments[0]
     game = get_game_for_channel(message.channel.id)
@@ -226,13 +243,13 @@ async def on_message(message: discord.Message):
 
     if is_correct:
         await message.add_reaction("✅")
-        # Build initial response with animated particles placeholder: e.g. "[animated particles] CP 11"
+        # Build initial response with placeholder and checkmark at the end: e.g. ":slow: CP 11 ✅"
         consecutive_warning = "\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*" if "⚠️" in response_text else ""
         particle = get_particle_placeholder()
-        initial_text = f"{particle} CP {extracted_cp}{consecutive_warning}"
+        initial_text = f"{particle} CP {extracted_cp} ✅{consecutive_warning}"
         reply_msg = await message.reply(initial_text, mention_author=False)
 
-        # Classify species asynchronously in background and update the message: e.g. "Pikachu CP 11" or "Unknown Species CP 11"
+        # Classify species asynchronously in background and update the message: e.g. "Pikachu CP 11 ✅" or "Unknown Species CP 11 ✅"
         async def update_with_species():
             try:
                 async with message.channel.typing():
@@ -247,7 +264,7 @@ async def on_message(message: discord.Message):
             else:
                 species_name = "Unknown Species"
 
-            final_text = f"{species_name} CP {extracted_cp}{consecutive_warning}"
+            final_text = f"{species_name} CP {extracted_cp} ✅{consecutive_warning}"
             try:
                 await reply_msg.edit(content=final_text)
             except Exception as edit_err:

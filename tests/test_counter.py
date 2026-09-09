@@ -82,6 +82,9 @@ class TestPokeCounterGame(unittest.TestCase):
                 self.content = content
 
         test_cases = [
+            ("10 ✅", 10),
+            ("15 ✅", 15),
+            ("15 ✅ *(Count manually set by <@12345> — next expected CP is 16)*", 15),
             ("Pikachu CP 11", 11),
             ("Unknown Species CP 11", 11),
             ("<a:particles:123456789> CP 11", 11),
@@ -93,6 +96,15 @@ class TestPokeCounterGame(unittest.TestCase):
             ("⏳ 15 ✅ *(Identifying species...)*", 15),
             ("15 ✅ (Charizard)\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*", 15),
             ("⏳ 42 ✅ *(Identifying species...)*\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*", 42),
+            ("<a:slow:999999> CP 11 ✅", 11),
+            ("Pikachu CP 11 ✅", 11),
+            ("Unknown Species CP 11 ✅", 11),
+            ("Ditto CP 10 ✅", 10),
+            ("Ditto CP 10 (edited)", 10),
+            ("<a:DittoDance:88888> CP 10", 10),
+            ("<a:slow:999999> CP 11 ✅\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*", 11),
+            ("CP: 25", 25),
+            ("30 CP", 30),
         ]
 
         for text, expected_cp in test_cases:
