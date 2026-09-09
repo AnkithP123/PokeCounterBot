@@ -29,11 +29,22 @@ TARGET_CHANNEL_ID: Optional[int] = int(TARGET_CHANNEL_ID_STR) if TARGET_CHANNEL_
 STARTING_CP = int(os.getenv("STARTING_CP", "10"))
 ALLOW_CONSECUTIVE = os.getenv("ALLOW_CONSECUTIVE_COUNTS", "true").lower() in ("1", "true", "yes")
 
-intents = discord.Intents.default()
-intents.message_content = True
-intents.guild_messages = True
+class PokeCounterClient(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.guild_messages = True
+        super().__init__(command_prefix="!", intents=intents)
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+    async def setup_hook(self):
+        try:
+            synced = await self.tree.sync()
+            logger.info("Synchronized %d application command(s) globally.", len(synced))
+        except Exception as e:
+            logger.error("Failed to sync application command tree: %s", e)
+
+
+bot = PokeCounterClient()
 
 # Multi-server support: Each channel maintains its own independent counting game
 games: Dict[int, PokeCounterGame] = {}
@@ -44,6 +55,16 @@ def is_target_channel(channel: discord.abc.GuildChannel) -> bool:
     if TARGET_CHANNEL_ID is not None:
         return channel.id == TARGET_CHANNEL_ID
     return getattr(channel, "name", "").lower() == TARGET_CHANNEL_NAME
+
+
+def find_target_channel(guild: Optional[discord.Guild]) -> Optional[discord.TextChannel]:
+    """Finds the configured #poke-counter channel within a guild."""
+    if not guild:
+        return None
+    for channel in guild.text_channels:
+        if is_target_channel(channel):
+            return channel
+    return None
 
 
 def get_game_for_channel(channel_id: int) -> PokeCounterGame:
@@ -189,23 +210,129 @@ async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
 
-@bot.command(name="count_status", aliases=["cp_status", "count"])
-async def cmd_count_status(ctx: commands.Context):
-    """Replies with the current counting status for this channel."""
-    if not is_target_channel(ctx.channel):
+@bot.tree.command(name="status", description="Check the current Pokémon counting game status and next required CP.")
+async def cmd_status(interaction: discord.Interaction):
+    guild = interaction.guild
+    target_channel = None
+    if is_target_channel(interaction.channel):
+        target_channel = interaction.channel
+    elif guild:
+        target_channel = find_target_channel(guild)
+
+    if not target_channel:
+        await interaction.response.send_message(
+            f"❌ Could not find a `#{TARGET_CHANNEL_NAME}` channel in this server.",
+            ephemeral=True
+        )
         return
 
-    await sync_game_state_from_channel(ctx.channel)
-    game = get_game_for_channel(ctx.channel.id)
-    current = game.current_cp if game.current_cp is not None else "None (Game not started or reset)"
-    expected = game.next_expected_cp
-    await ctx.send(
-        f"📊 **PokeCounter Status**\n"
-        f"• Server: **{ctx.guild.name}**\n"
-        f"• Current Count: `{current}`\n"
-        f"• Next Expected CP: `{expected}`\n"
-        f"• Reset Base: `{game.starting_cp}`"
+    game = get_game_for_channel(target_channel.id)
+    current_val = f"`{game.current_cp}`" if game.current_cp is not None else "*None (Game not started or reset)*"
+    expected_val = f"`{game.next_expected_cp}`"
+
+    embed = discord.Embed(
+        title="📊 PokéCounter Status",
+        color=discord.Color.blue()
     )
+    embed.add_field(name="Channel", value=target_channel.mention, inline=True)
+    embed.add_field(name="Current Count", value=current_val, inline=True)
+    embed.add_field(name="Next Expected CP", value=expected_val, inline=True)
+    embed.add_field(name="Reset Base CP", value=f"`{game.starting_cp}`", inline=True)
+    if guild:
+        embed.set_footer(text=f"Server: {guild.name}")
+
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="count_status", description="Alias for /status. Check current count and next required CP.")
+async def cmd_count_status(interaction: discord.Interaction):
+    await cmd_status(interaction)
+
+
+@bot.tree.command(name="rules", description="View the rules and how to play the Pokémon counting game.")
+async def cmd_rules(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="📖 PokéCounter Game Rules",
+        description="Work together with your server to count as high as possible using Pokémon GO screenshots!",
+        color=discord.Color.green()
+    )
+    embed.add_field(
+        name="1️⃣ How to Count",
+        value=f"Find a Pokémon in Pokémon GO with the exact **Next Expected CP**, take a screenshot, and post it in the counting channel.",
+        inline=False
+    )
+    embed.add_field(
+        name="2️⃣ Automatic OCR Detection",
+        value="The bot automatically scans your screenshot and reads the CP at the top. If correct, the count progresses (`✅`)!",
+        inline=False
+    )
+    embed.add_field(
+        name="3️⃣ Wrong Count / Reset",
+        value=f"Posting an incorrect CP or broken count resets the game back to `{STARTING_CP}` (`❌`).",
+        inline=False
+    )
+    embed.add_field(
+        name="4️⃣ Take Turns",
+        value="Please take turns! Counting twice in a row will be disabled in the future.",
+        inline=False
+    )
+    embed.add_field(
+        name="💡 Screenshot Tip",
+        value="Ensure the `CP XXXX` banner near the top is clearly visible and not obscured by notifications or widgets.",
+        inline=False
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="check", description="Test CP detection on a Pokémon screenshot without affecting the count.")
+@discord.app_commands.describe(
+    image="The Pokémon GO screenshot to test",
+    visible="Whether to make the result visible to everyone in the channel (default: False)"
+)
+async def cmd_check(interaction: discord.Interaction, image: discord.Attachment, visible: bool = False):
+    is_img = (image.content_type and image.content_type.startswith("image/")) or image.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+    if not is_img:
+        await interaction.response.send_message("❌ Please upload a valid image file (.png, .jpg, .webp).", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=not visible)
+
+    try:
+        image_bytes = await image.read()
+        extracted_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
+    except Exception as e:
+        logger.error("Error reading image in /check: %s", e)
+        await interaction.followup.send("⚠️ Failed to process image file.", ephemeral=not visible)
+        return
+
+    if extracted_cp is None:
+        await interaction.followup.send(
+            "⚠️ **Could not detect a Pokémon CP in that image.**\nMake sure the CP banner near the top is clearly visible and unobstructed.",
+            ephemeral=not visible
+        )
+        return
+
+    target_channel = None
+    if is_target_channel(interaction.channel):
+        target_channel = interaction.channel
+    elif interaction.guild:
+        target_channel = find_target_channel(interaction.guild)
+
+    status_extra = ""
+    if target_channel:
+        game = get_game_for_channel(target_channel.id)
+        if extracted_cp == game.next_expected_cp:
+            status_extra = f"\n🎯 **Matches next expected CP ({game.next_expected_cp})!** Ready to count."
+        else:
+            status_extra = f"\nℹ️ *Current next expected CP in {target_channel.mention} is `{game.next_expected_cp}`.*"
+
+    embed = discord.Embed(
+        title="🔍 CP Scan Result",
+        description=f"Detected CP: **{extracted_cp}**{status_extra}",
+        color=discord.Color.gold()
+    )
+    embed.set_thumbnail(url=image.url)
+    await interaction.followup.send(embed=embed, ephemeral=not visible)
 
 
 def main():
