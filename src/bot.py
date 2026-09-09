@@ -249,6 +249,72 @@ async def cmd_count_status(interaction: discord.Interaction):
     await cmd_status(interaction)
 
 
+@bot.tree.command(name="set_count", description="Set the current Pokémon count number for this server.")
+@discord.app_commands.describe(
+    number="The new current CP count (10-6000, or 0 to reset to base starting CP)"
+)
+async def cmd_set_count(interaction: discord.Interaction, number: int):
+    guild = interaction.guild
+    target_channel = None
+    if is_target_channel(interaction.channel):
+        target_channel = interaction.channel
+    elif guild:
+        target_channel = find_target_channel(guild)
+
+    if not target_channel:
+        await interaction.response.send_message(
+            f"❌ Could not find a `#{TARGET_CHANNEL_NAME}` channel in this server.",
+            ephemeral=True
+        )
+        return
+
+    game = get_game_for_channel(target_channel.id)
+
+    if number == 0:
+        # Reset to base starting CP
+        game.current_cp = None
+        game.last_user_id = None
+        reset_msg = f"0 ❌ *(Count reset by {interaction.user.mention} — next expected CP is {game.starting_cp})*"
+        if interaction.channel.id == target_channel.id:
+            await interaction.response.send_message(reset_msg)
+        else:
+            await target_channel.send(reset_msg)
+            await interaction.response.send_message(
+                f"🔄 Count in {target_channel.mention} has been reset. Next expected CP is `{game.starting_cp}`.",
+                ephemeral=True
+            )
+        return
+
+    if number < 10 or number > 6000:
+        await interaction.response.send_message(
+            f"❌ Invalid CP: `{number}`. Please enter a valid Pokémon GO CP between 10 and 6000 (or `0` to reset).",
+            ephemeral=True
+        )
+        return
+
+    game.current_cp = number
+    game.last_user_id = None
+    set_msg = f"{number} ✅ *(Count manually set by {interaction.user.mention} — next expected CP is {number + 1})*"
+
+    if interaction.channel.id == target_channel.id:
+        await interaction.response.send_message(set_msg)
+    else:
+        await target_channel.send(set_msg)
+        await interaction.response.send_message(
+            f"✅ Count in {target_channel.mention} set to `{number}`. Next expected CP is `{number + 1}`.",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(name="set_number", description="Alias for /set_count. Set the current count number.")
+@discord.app_commands.describe(
+    number="The new current CP count (10-6000, or 0 to reset to base starting CP)"
+)
+async def cmd_set_number(interaction: discord.Interaction, number: int):
+    await cmd_set_count(interaction, number)
+
+
+
 @bot.tree.command(name="rules", description="View the rules and how to play the Pokémon counting game.")
 async def cmd_rules(interaction: discord.Interaction):
     embed = discord.Embed(
