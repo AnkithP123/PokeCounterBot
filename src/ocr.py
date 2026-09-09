@@ -87,10 +87,20 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
     """
     Extracts the Pokémon CP value from a Pokémon GO screenshot.
     Uses multi-thresholding, dual blue/grayscale channel analysis,
-    tiered crop inspection, and frequency voting.
+    tiered crop inspection, resolution normalization, and frequency voting.
     """
     img = _load_image(image_input)
     h, w = img.shape[:2]
+
+    # Normalize resolution: high-res screenshots (e.g. 2142x960 from iPhone Retina)
+    # create excessively thick stroke widths that bridge small gaps (like balloon strings).
+    # Downscaling images larger than 1080p height standardizes stroke thickness for Tesseract.
+    max_h = 1080
+    if h > max_h:
+        scale = max_h / float(h)
+        new_w = int(round(w * scale))
+        img = cv2.resize(img, (new_w, max_h), interpolation=cv2.INTER_AREA)
+        h, w = img.shape[:2]
 
     # Crop bounding boxes for the CP banner:
     # 1. Standard banner window (covers standard full-screen and common cropped views)
