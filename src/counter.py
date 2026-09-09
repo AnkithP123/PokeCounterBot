@@ -98,11 +98,7 @@ class PokeCounterGame:
             return True, f"{extracted_cp} ✅"
         else:
             # Wrong count! Reset state
-            prev_cp = self.current_cp
             self.current_cp = None
             self.last_user_id = None
-            if prev_cp is not None and extracted_cp == prev_cp:
-                msg = f"{extracted_cp} ❌ CP {extracted_cp} was already counted! Expected next was {expected}. Resetting to {self.starting_cp}."
-            else:
-                msg = f"{extracted_cp} ❌ Wrong CP (expected {expected})! Begin at {self.starting_cp}."
+            msg = f"{extracted_cp} ❌ Wrong CP, begin at {self.starting_cp}."
             return False, msg
