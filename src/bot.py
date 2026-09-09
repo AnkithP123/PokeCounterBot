@@ -137,6 +137,29 @@ async def on_guild_join(guild: discord.Guild):
             await sync_game_state_from_channel(channel)
 
 
+def get_particle_placeholder() -> str:
+    """
+    Returns an animated particle/sparkle emoji if available, or falls back to sparkles ✨.
+    Checks PARTICLES_EMOJI / LOADING_EMOJI env var first, then bot's guild emojis.
+    """
+    env_emoji = os.getenv("PARTICLES_EMOJI") or os.getenv("LOADING_EMOJI")
+    if env_emoji:
+        return env_emoji
+
+    # Search for an animated emoji matching particle, sparkle, star, loading, or spinner
+    keywords = ["particle", "sparkle", "star", "loading", "spinner"]
+    for kw in keywords:
+        for emoji in bot.emojis:
+            if getattr(emoji, "animated", False) and kw in emoji.name.lower():
+                return str(emoji)
+
+    for emoji in bot.emojis:
+        if getattr(emoji, "animated", False):
+            return str(emoji)
+
+    return "✨"
+
+
 @bot.event
 async def on_message(message: discord.Message):
     # Ignore own messages or other bot messages
@@ -173,29 +196,28 @@ async def on_message(message: discord.Message):
     )
 
     try:
-        async with message.channel.typing():
-            image_bytes = await attachment.read()
-            extracted_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
+        image_bytes = await attachment.read()
+        extracted_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
     except Exception as e:
-        logger.error("Error reading/processing image attachment: %s", e)
-        await message.add_reaction("⚠️")
+        logger.error("Error reading image attachment: %s", e)
         return
 
     if extracted_cp is None:
-        logger.warning("Could not extract CP from image sent by %s", message.author.name)
-        await message.add_reaction("❓")
-        await message.reply(
-            "⚠️ Could not detect a Pokémon CP in that screenshot. Make sure the CP at the top is clearly visible!",
-            mention_author=False
+        logger.info(
+            "No CP detected in image from %s in [%s] #%s",
+            message.author.name,
+            message.guild.name if message.guild else "",
+            message.channel.name
         )
+        await message.add_reaction("❓")
         return
 
     logger.info(
-        "[%s #%s] Extracted CP: %d from user %s. Next expected: %d",
-        message.guild.name if message.guild else "",
-        message.channel.name,
+        "Detected CP: %d from %s in [%s] #%s (Expected: %d)",
         extracted_cp,
         message.author.name,
+        message.guild.name if message.guild else "",
+        message.channel.name,
         game.next_expected_cp
     )
 
@@ -203,11 +225,37 @@ async def on_message(message: discord.Message):
 
     if is_correct:
         await message.add_reaction("✅")
+        # Build initial response with animated particles placeholder: e.g. "[animated particles] CP 11"
+        consecutive_warning = "\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*" if "⚠️" in response_text else ""
+        particle = get_particle_placeholder()
+        initial_text = f"{particle} CP {extracted_cp}{consecutive_warning}"
+        reply_msg = await message.reply(initial_text, mention_author=False)
+
+        # Classify species asynchronously in background and update the message: e.g. "Pikachu CP 11" or "Unknown Species CP 11"
+        async def update_with_species():
+            try:
+                res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes)
+                species = res.get("species")
+            except Exception as ex:
+                logger.error("Error classifying species on count: %s", ex)
+                species = None
+
+            if species:
+                species_name = species
+            else:
+                species_name = "Unknown Species"
+
+            final_text = f"{species_name} CP {extracted_cp}{consecutive_warning}"
+            try:
+                await reply_msg.edit(content=final_text)
+            except Exception as edit_err:
+                logger.warning("Could not edit count message with species: %s", edit_err)
+
+        asyncio.create_task(update_with_species())
     else:
         await message.add_reaction("❌")
+        await message.reply(response_text, mention_author=False)
 
-    # Reply directly to the user's screenshot message without pinging them
-    await message.reply(response_text, mention_author=False)
     await bot.process_commands(message)
 
 

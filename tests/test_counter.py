@@ -76,6 +76,31 @@ class TestPokeCounterGame(unittest.TestCase):
         self.assertEqual(game.current_cp, 15)
         self.assertEqual(game.next_expected_cp, 16)
 
+    def test_history_recovery_with_species_and_placeholders(self):
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        test_cases = [
+            ("Pikachu CP 11", 11),
+            ("Unknown Species CP 11", 11),
+            ("<a:particles:123456789> CP 11", 11),
+            ("✨ CP 11", 11),
+            ("Pikachu CP 11\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*", 11),
+            ("✨ CP 42\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*", 42),
+            ("15 ✅ (Pikachu)", 15),
+            ("15 ✅ (Unknown species)", 15),
+            ("⏳ 15 ✅ *(Identifying species...)*", 15),
+            ("15 ✅ (Charizard)\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*", 15),
+            ("⏳ 42 ✅ *(Identifying species...)*\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*", 42),
+        ]
+
+        for text, expected_cp in test_cases:
+            game = PokeCounterGame(starting_cp=10)
+            game.recover_from_history([FakeMessage(text)])
+            self.assertEqual(game.current_cp, expected_cp, f"Failed on content: {text}")
+            self.assertEqual(game.next_expected_cp, expected_cp + 1)
+
     def test_history_recovery_from_reset(self):
         game = PokeCounterGame(starting_cp=10)
 

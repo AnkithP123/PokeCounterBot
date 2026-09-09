@@ -35,10 +35,15 @@ class PokeCounterGame:
         if "❌" in content:
             return None
 
-        # Check for success pattern: e.g. "10 ✅" or "10 ✅" with optional text
-        match = re.search(r'^(\d+)\s*✅', content.strip())
-        if match:
-            return int(match.group(1))
+        # Check for CP format: e.g. "Pikachu CP 11", "Unknown Species CP 11", "✨ CP 11"
+        match_cp = re.search(r'\bCP\s*(\d+)\b', content.strip(), re.IGNORECASE)
+        if match_cp:
+            return int(match_cp.group(1))
+
+        # Check for legacy success pattern: e.g. "10 ✅", "10 ✅ (Pikachu)", or "⏳ 10 ✅"
+        match_legacy = re.search(r'(?:^|[^\d])(\d+)\s*✅', content.strip())
+        if match_legacy:
+            return int(match_legacy.group(1))
 
         return None
 
