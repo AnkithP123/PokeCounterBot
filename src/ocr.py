@@ -117,60 +117,46 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
     # Multi-channel decomposition:
     # 1. Blue channel: isolates white text from yellow/gold coin & green backgrounds
     # 2. Min(B,G,R): isolates pure white CP text from purple/blue skies & colorful event backgrounds
-    # (Grayscale is redundant when both Blue and Min(B,G,R) are evaluated)
-
-    # Pass 1: Look for explicit CP prefix (e.g. "CP 11", "cp5629") across crops
     for (y1, y2, x1, x2) in crops:
         crop = img[y1:y2, x1:x2]
         if crop.size == 0:
             continue
 
-        all_found: List[Tuple[bool, int]] = []
         min_bgr = np.minimum(crop[:, :, 0], np.minimum(crop[:, :, 1], crop[:, :, 2]))
         channels = [crop[:, :, 0], min_bgr]
 
-        for chan in channels:
-            scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
-            for th in [245, 240, 235, 230, 220, 210]:
+        prefixed: List[int] = []
+        unprefixed: List[int] = []
+
+        for th in [240, 230, 220, 210]:
+            for chan in channels:
+                scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
                 _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
                 bordered = cv2.copyMakeBorder(b, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
                 for psm in (6, 7):
                     try:
                         txt = pytesseract.image_to_string(bordered, config=f"--psm {psm} -c tessedit_char_whitelist={whitelist}").strip()
-                        all_found.extend(_parse_all_candidates(txt))
+                        for is_p, v in _parse_all_candidates(txt):
+                            if is_p:
+                                prefixed.append(v)
+                            else:
+                                unprefixed.append(v)
                     except Exception:
                         pass
 
-        prefixed = [c[1] for c in all_found if c[0]]
+            # Early exit: if we have already found consistent prefixed candidate agreement, break early
+            if len(prefixed) >= 2 and Counter(prefixed).most_common(1)[0][1] >= 2:
+                break
+
         if prefixed:
             # Sort by longest candidate first, then frequency (e.g. 5629 beats 62)
             counts = Counter(prefixed)
             return sorted(counts.keys(), key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
-
-    # Pass 2: Fallback to standalone integer frequency voting if no explicit CP prefix was read
-    for (y1, y2, x1, x2) in crops:
-        crop = img[y1:y2, x1:x2]
-        if crop.size == 0:
-            continue
-
-        all_found: List[Tuple[bool, int]] = []
-        min_bgr = np.minimum(crop[:, :, 0], np.minimum(crop[:, :, 1], crop[:, :, 2]))
-        channels = [crop[:, :, 0], min_bgr]
-
-        for chan in channels:
-            scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
-            for th in [245, 240, 235, 230, 220, 210]:
-                _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
-                bordered = cv2.copyMakeBorder(b, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-                for psm in (6, 7):
-                    try:
-                        txt = pytesseract.image_to_string(bordered, config=f"--psm {psm} -c tessedit_char_whitelist={whitelist}").strip()
-                        all_found.extend(_parse_all_candidates(txt))
-                    except Exception:
-                        pass
-
-        if all_found:
-            return Counter([c[1] for c in all_found]).most_common(1)[0][0]
+        elif unprefixed and len(unprefixed) >= 3:
+            # Fallback for sprites where CP letters are obscured (e.g. Gimmighoul gold coin rim)
+            counts = Counter(unprefixed)
+            if counts.most_common(1)[0][1] >= 2:
+                return counts.most_common(1)[0][0]
 
     return None
 
