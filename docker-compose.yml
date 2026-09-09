@@ -1,0 +1,12 @@
+services:
+  poke-counter-bot:
+    build: .
+    container_name: poke-counter-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    # Optional resource limits for lightweight VPS servers
+    deploy:
+      resources:
+        limits:
+          memory: 512M

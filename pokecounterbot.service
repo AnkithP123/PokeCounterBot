@@ -1,0 +1,15 @@
+[Unit]
+Description=PokeCounterBot Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/PokeCounterBot
+EnvironmentFile=/opt/PokeCounterBot/.env
+ExecStart=/opt/PokeCounterBot/venv/bin/python -m src.bot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
