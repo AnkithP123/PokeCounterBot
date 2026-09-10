@@ -61,6 +61,17 @@ class TestClassifier(unittest.TestCase):
         self.assertIn("Igglybuff", res["candidates"])
         self.assertIn("Jigglypuff", res["candidates"])
 
+    def test_lunala_disambiguation(self):
+        """Verify that CP 2283 + HP 164 + Cosmog Candy disambiguates to Lunala over Solgaleo."""
+        img_lunala = os.path.join(SAMPLES_DIR, "cp2283_lunala.png")
+        res = classify_pokemon_from_image(img_lunala)
+        self.assertEqual(res["species"], "Lunala")
+        self.assertEqual(res["cp"], 2283)
+        self.assertEqual(res["hp"], 164)
+        self.assertEqual(res["candy_family"], "COSMOG")
+        self.assertIn("Solgaleo", res["candidates"])
+        self.assertIn("Lunala", res["candidates"])
+
 
 if __name__ == "__main__":
     unittest.main()
