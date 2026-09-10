@@ -72,13 +72,81 @@ def extract_hp_from_image(img: np.ndarray) -> Optional[int]:
     h, w = img.shape[:2]
     mid_crop = img[int(h * 0.44):int(h * 0.60), :]
     gray = cv2.cvtColor(mid_crop, cv2.COLOR_BGR2GRAY)
-    txt = pytesseract.image_to_string(gray)
 
-    match = re.search(r'(\d+)\s*/\s*(\d+)\s*HP', txt, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
+    for th in (0, 200, 180, 220, 160):
+        if th > 0:
+            _, proc = cv2.threshold(gray, th, 255, cv2.THRESH_BINARY)
+        else:
+            proc = gray
+        txt = pytesseract.image_to_string(proc)
+        match = re.search(r'(\d+)\s*/\s*(\d+)\s*HP', txt, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
 
     return None
+
+
+_VIT_MODEL = None
+_VIT_PROCESSOR = None
+
+
+def _get_vit_classifier():
+    global _VIT_MODEL, _VIT_PROCESSOR
+    if _VIT_MODEL is None:
+        try:
+            from transformers import ViTForImageClassification, ViTImageProcessor
+            model_id = "skshmjn/Pokemon-classifier-gen9-1025"
+            _VIT_PROCESSOR = ViTImageProcessor.from_pretrained(model_id, local_files_only=True)
+            _VIT_MODEL = ViTForImageClassification.from_pretrained(model_id, local_files_only=True)
+            _VIT_MODEL.eval()
+        except Exception as e:
+            logger.warning("Could not load local ViT classifier: %s", e)
+            return None, None
+    return _VIT_MODEL, _VIT_PROCESSOR
+
+
+def disambiguate_candidates_with_vision(img: np.ndarray, candidates: List[str]) -> Optional[str]:
+    """
+    Uses the Vision Transformer (ViT) to rank multiple candidate species from the sprite image.
+    Returns the candidate species with the highest prediction logit/probability.
+    """
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    model, processor = _get_vit_classifier()
+    if model is None or processor is None:
+        return candidates[0]
+
+    try:
+        import torch
+        # Crop the sprite area in the upper-center of the screen
+        h, w = img.shape[:2]
+        sprite_crop = img[int(h * 0.12):int(h * 0.46), int(w * 0.15):int(w * 0.85)]
+        rgb = cv2.cvtColor(sprite_crop, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(rgb)
+
+        inputs = processor(images=pil_img, return_tensors="pt")
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits[0]
+
+        label_to_id = {v.lower(): k for k, v in model.config.id2label.items()}
+        scored_candidates = []
+        for cand in candidates:
+            cand_id = label_to_id.get(cand.lower())
+            if cand_id is not None:
+                score = logits[cand_id].item()
+                scored_candidates.append((score, cand))
+            else:
+                scored_candidates.append((-999.0, cand))
+
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+        return scored_candidates[0][1]
+    except Exception as ex:
+        logger.warning("Error running ViT disambiguation: %s", ex)
+        return candidates[0]
 
 
 def extract_candy_name_from_image(img: np.ndarray) -> Optional[str]:
@@ -121,7 +189,7 @@ def classify_pokemon_from_image(
 ) -> Dict[str, Any]:
     """
     Identifies the Pokémon species from a Pokémon GO screenshot using
-    Candy Family extraction + CP & HP formula triangulation.
+    Candy Family extraction + CP & HP formula triangulation + ViT candidate disambiguation.
 
     Returns a dict with:
       - species: Name of the identified Pokémon (e.g. 'Mightyena') or None
@@ -155,16 +223,19 @@ def classify_pokemon_from_image(
         result["explanation"] = f"Candy family '{candy}' not found in database."
         return result
 
+    names = [m["name"] for m in family_members]
+
     if not cp or not hp:
-        # Fallback to single-member family if unevolved/no evolutions
+        # Fallback to single-member family if unevolved/no evolutions, else vision
         if len(family_members) == 1:
             result["species"] = family_members[0]["name"]
             result["candidates"] = [family_members[0]["name"]]
             result["explanation"] = f"Identified as {result['species']} (single-stage family with {candy} Candy)."
         else:
-            names = [m["name"] for m in family_members]
+            winner = disambiguate_candidates_with_vision(img, names)
+            result["species"] = winner
             result["candidates"] = names
-            result["explanation"] = f"Found {candy} Candy, but missing CP/HP to differentiate between: {', '.join(names)}."
+            result["explanation"] = f"Found {candy} Candy, missing CP/HP; identified as {winner} via visual classifier."
         return result
 
     # Triangulate using CP and HP
@@ -178,11 +249,13 @@ def classify_pokemon_from_image(
         result["species"] = valid_species[0]
         result["explanation"] = f"Triangulated from {candy} Candy + CP {cp} + HP {hp}."
     elif len(valid_species) > 1:
-        result["species"] = valid_species[0]
-        result["explanation"] = f"Ambiguous between {', '.join(valid_species)} for CP {cp} and HP {hp}."
+        winner = disambiguate_candidates_with_vision(img, valid_species)
+        result["species"] = winner
+        result["explanation"] = f"Triangulated {', '.join(valid_species)} for CP {cp}/HP {hp}; selected {winner} using visual classifier."
     else:
-        # If triangulation produced 0 matches (e.g. mega/costume/special boost), fallback to base form
-        result["species"] = family_members[0]["name"]
-        result["explanation"] = f"No standard stat match in {candy} family for CP {cp}/HP {hp}; defaulted to {result['species']}."
+        # If triangulation produced 0 matches (e.g. mega/costume/special boost), fallback using vision
+        winner = disambiguate_candidates_with_vision(img, names)
+        result["species"] = winner
+        result["explanation"] = f"No standard stat match in {candy} family for CP {cp}/HP {hp}; selected {winner} via visual classifier."
 
     return result

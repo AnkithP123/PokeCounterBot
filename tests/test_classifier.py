@@ -50,6 +50,17 @@ class TestClassifier(unittest.TestCase):
         self.assertEqual(res["hp"], 12)
         self.assertEqual(res["candy_family"], "FLETCHLING")
 
+    def test_jigglypuff_disambiguation(self):
+        """Verify that CP 27 + HP 42 + Jigglypuff Candy disambiguates to Jigglypuff over Igglybuff."""
+        img_jiggly = os.path.join(SAMPLES_DIR, "cp27_jigglypuff.png")
+        res = classify_pokemon_from_image(img_jiggly)
+        self.assertEqual(res["species"], "Jigglypuff")
+        self.assertEqual(res["cp"], 27)
+        self.assertEqual(res["hp"], 42)
+        self.assertEqual(res["candy_family"], "JIGGLYPUFF")
+        self.assertIn("Igglybuff", res["candidates"])
+        self.assertIn("Jigglypuff", res["candidates"])
+
 
 if __name__ == "__main__":
     unittest.main()
