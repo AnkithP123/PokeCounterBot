@@ -89,9 +89,9 @@ def extract_hp_from_image(img: np.ndarray) -> Optional[int]:
         for th in (0, 200):
             proc = gray_tight if th == 0 else cv2.threshold(gray_tight, th, 255, cv2.THRESH_BINARY)[1]
             txt = run_fast_ocr(proc, psm=7)
-            match = re.search(r'(\d+)\s*/\s*(\d+)\s*(?:HP|KP|PV)\b', txt, re.IGNORECASE)
+            match = re.search(r'(?:(\d+)\s*/\s*)?(\d+)\s*(?:HP|KP|PV)\b', txt, re.IGNORECASE)
             if match:
-                return int(match.group(1))
+                return int(match.group(2))
 
     # Fallback to wider middle section for non-standard or appraisal screens
     mid_crop = img[int(h * 0.40):int(h * 0.65), :]
@@ -99,9 +99,9 @@ def extract_hp_from_image(img: np.ndarray) -> Optional[int]:
     for th in (0, 200, 180):
         proc = gray if th == 0 else cv2.threshold(gray, th, 255, cv2.THRESH_BINARY)[1]
         txt = run_fast_ocr(proc, psm=3)
-        match = re.search(r'(\d+)\s*/\s*(\d+)\s*(?:HP|KP|PV)\b', txt, re.IGNORECASE)
+        match = re.search(r'(?:(\d+)\s*/\s*)?(\d+)\s*(?:HP|KP|PV)\b', txt, re.IGNORECASE)
         if match:
-            return int(match.group(1))
+            return int(match.group(2))
 
     return None
 
@@ -128,9 +128,10 @@ POWERUP_COST_TABLE: Dict[int, Dict[str, Any]] = {
 def validate_or_correct_cp_for_species(species_name: str, detected_cp: Optional[int], hp: Optional[int]) -> Optional[int]:
     """
     Validates detected CP against Pokémon GO's level CPM curve and base stats.
-    If detected_cp is impossible (e.g. 20 for Seviper with 17 HP), tests common
-    OCR confusions ('0' <-> '8', '3' <-> '8', '1' <-> '7') to see if a single-digit
-    correction produces a mathematically valid CP.
+    If detected_cp is impossible (e.g. 20 for Seviper with 17 HP, or 172 for Porygon with 28 HP),
+    tests common OCR confusions ('0' <-> '8', '3' <-> '2', '1' <-> '7') and leading digit
+    drops (when letter 'P' in 'CP' was misread as a digit, e.g. '173' -> '73') to find
+    a mathematically valid CP.
     """
     if not detected_cp or not hp or not species_name:
         return detected_cp
@@ -155,23 +156,42 @@ def validate_or_correct_cp_for_species(species_name: str, detected_cp: Optional[
     confusions = {
         '0': ['8', '9'],
         '8': ['0', '3'],
-        '3': ['8'],
+        '3': ['2', '8'],
+        '2': ['3', '7'],
         '1': ['7', '4'],
-        '7': ['1'],
+        '7': ['1', '2'],
         '6': ['8', '5'],
         '5': ['6']
     }
 
-    # Generate substitutions
+    candidates_to_test: List[int] = []
+
+    # 1. Single digit substitutions on original string
     for i, ch in enumerate(cp_str):
         if ch in confusions:
             for repl in confusions[ch]:
-                cand_str = cp_str[:i] + repl + cp_str[i+1:]
-                cand_val = int(cand_str)
-                if is_stat_combination_possible(species_data, cand_val, hp):
-                    logger.info("Auto-corrected impossible CP %d to mathematically verified CP %d for %s (HP %d)",
-                                detected_cp, cand_val, species_name, hp)
-                    return cand_val
+                c_val = int(cp_str[:i] + repl + cp_str[i+1:])
+                if 10 <= c_val <= 6000:
+                    candidates_to_test.append(c_val)
+
+    # 2. Leading digit drop (e.g. letter 'P' or border misread as '1', '7', '4' in front of 2-digit CP)
+    if len(cp_str) >= 3 and cp_str[0] in ('1', '7', '4'):
+        truncated = cp_str[1:]
+        t_val = int(truncated)
+        if 10 <= t_val <= 6000:
+            candidates_to_test.append(t_val)
+        for i, ch in enumerate(truncated):
+            if ch in confusions:
+                for repl in confusions[ch]:
+                    c_val = int(truncated[:i] + repl + truncated[i+1:])
+                    if 10 <= c_val <= 6000:
+                        candidates_to_test.append(c_val)
+
+    for cand_val in candidates_to_test:
+        if is_stat_combination_possible(species_data, cand_val, hp):
+            logger.info("Auto-corrected impossible CP %d to mathematically verified CP %d for %s (HP %d)",
+                        detected_cp, cand_val, species_name, hp)
+            return cand_val
 
     return detected_cp
 
@@ -576,7 +596,7 @@ def _classify_pokemon_core(img: np.ndarray, cp: Optional[int]) -> Dict[str, Any]
         hp = extract_hp_from_image(img)
         result["hp"] = hp
 
-        if not cp or not hp:
+        if cp is None or hp is None:
             if len(family_members) == 1:
                 result["species"] = family_members[0]["name"]
                 result["candidates"] = [family_members[0]["name"]]

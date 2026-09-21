@@ -17,6 +17,7 @@ IMG_ZACIAN_PATH = os.path.join(SAMPLES_DIR, "cp5629_zacian.png")
 IMG_CLEFAIRY_PATH = os.path.join(SAMPLES_DIR, "cp15_clefairy.png")
 IMG_GIMMIGHOUL_12_PATH = os.path.join(SAMPLES_DIR, "cp12_gimmighoul_zard.png")
 IMG_SWAMPERT_PATH = os.path.join(SAMPLES_DIR, "cp3362_swampert.png")
+IMG_PORYGON_PATH = os.path.join(SAMPLES_DIR, "cp73_porygon_shiny.png")
 
 
 class TestOCR(unittest.TestCase):
@@ -67,6 +68,10 @@ class TestOCR(unittest.TestCase):
     def test_extract_cp_swampert_3362(self):
         """Verify that Shadow Swampert screenshot resolves to CP 3362 instead of truncated 62."""
         self.assertEqual(extract_cp_from_image(IMG_SWAMPERT_PATH), 3362)
+
+    def test_extract_cp_porygon_73(self):
+        """Verify that Porygon with sun lens flare and fainted status resolves to CP 73 instead of 172."""
+        self.assertEqual(extract_cp_from_image(IMG_PORYGON_PATH), 73)
 
 
 

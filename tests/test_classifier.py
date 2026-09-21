@@ -72,6 +72,16 @@ class TestClassifier(unittest.TestCase):
         self.assertIn("Solgaleo", res["candidates"])
         self.assertIn("Lunala", res["candidates"])
 
+    def test_porygon_fainted_stat_validation(self):
+        """Verify that fainted Porygon (0 / 28 HP) correctly extracts Max HP 28 and resolves CP 73."""
+        img_porygon = os.path.join(SAMPLES_DIR, "cp73_porygon_shiny.png")
+        res = classify_pokemon_from_image(img_porygon)
+        self.assertEqual(res["species"], "Porygon")
+        self.assertEqual(res["cp"], 73)
+        self.assertEqual(res["hp"], 28)
+        self.assertEqual(res["candy_family"], "PORYGON")
+        self.assertEqual(res["powerup_stardust"], 200)
+
 
 if __name__ == "__main__":
     unittest.main()

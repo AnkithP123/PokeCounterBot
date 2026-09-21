@@ -84,8 +84,10 @@ def _parse_all_candidates(text: str) -> List[Tuple[bool, int]]:
         return []
 
     results = []
-    # Priority 1: Match with explicit CP prefix, common misreads, or single-letter prefix [cp]
-    for m in re.finditer(r'(?:cp|ce|cep|ep|[cp])\s*[:\-\s]?\s*([1-9]\d{1,3})\b', text, re.IGNORECASE):
+    # Priority 1: Match with explicit CP prefix or common OCR misreads (e.g. "cp", "ce", "cep", "ep", "gp", "p", "c11")
+    # Note: Require 'c' to be immediately followed by digits (e.g. 'c11') rather than allowing lone 'c ' (e.g. 'c 172')
+    # where letter 'P' in 'CP' was misread as digit '1'.
+    for m in re.finditer(r'(?:cp|ce|cep|ep|gp|op|dp|p|c(?=\d))\s*[:\-\s]?\s*([1-9]\d{1,3})\b', text, re.IGNORECASE):
         v = int(m.group(1))
         if 10 <= v <= 6000:
             results.append((True, v))
