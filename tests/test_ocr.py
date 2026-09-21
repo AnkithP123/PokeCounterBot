@@ -18,6 +18,7 @@ IMG_CLEFAIRY_PATH = os.path.join(SAMPLES_DIR, "cp15_clefairy.png")
 IMG_GIMMIGHOUL_12_PATH = os.path.join(SAMPLES_DIR, "cp12_gimmighoul_zard.png")
 IMG_SWAMPERT_PATH = os.path.join(SAMPLES_DIR, "cp3362_swampert.png")
 IMG_PORYGON_PATH = os.path.join(SAMPLES_DIR, "cp73_porygon_shiny.png")
+IMG_URSALUNA_PATH = os.path.join(SAMPLES_DIR, "cp4000_ursaluna_shadow.png")
 
 
 class TestOCR(unittest.TestCase):
@@ -72,6 +73,10 @@ class TestOCR(unittest.TestCase):
     def test_extract_cp_porygon_73(self):
         """Verify that Porygon with sun lens flare and fainted status resolves to CP 73 instead of 172."""
         self.assertEqual(extract_cp_from_image(IMG_PORYGON_PATH), 73)
+
+    def test_extract_cp_ursaluna_4000(self):
+        """Verify that Shadow Ursaluna screenshot resolves to CP 4000 instead of truncated 40 or 1000."""
+        self.assertEqual(extract_cp_from_image(IMG_URSALUNA_PATH), 4000)
 
 
 

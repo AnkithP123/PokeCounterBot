@@ -195,12 +195,21 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
         if crop_prefixed:
             counts = Counter(crop_prefixed)
             if counts.most_common(1)[0][1] >= 2:
-                valid_cands = [k for k, c in counts.items() if c >= 2]
-                return sorted(valid_cands, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
+                valid = [k for k, c in counts.items() if c >= 2]
+                for v in list(valid):
+                    for k in counts.keys():
+                        if len(str(k)) > len(str(v)) and (str(k).startswith(str(v)) or str(k).endswith(str(v))):
+                            valid.append(k)
+                return sorted(valid, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
 
     if all_prefixed:
         counts = Counter(all_prefixed)
-        return sorted(counts.keys(), key=lambda k: (counts[k], len(str(k))), reverse=True)[0]
+        valid = [k for k, c in counts.items() if c >= 2] or list(counts.keys())
+        for v in list(valid):
+            for k in counts.keys():
+                if len(str(k)) > len(str(v)) and (str(k).startswith(str(v)) or str(k).endswith(str(v))):
+                    valid.append(k)
+        return sorted(valid, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
 
     # Pass 2: Fallback for sprites where CP letters are obscured (e.g. Gimmighoul coin rim)
     unprefixed: List[int] = []

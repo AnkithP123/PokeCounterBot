@@ -82,6 +82,15 @@ class TestClassifier(unittest.TestCase):
         self.assertEqual(res["candy_family"], "PORYGON")
         self.assertEqual(res["powerup_stardust"], 200)
 
+    def test_ursaluna_shadow_classification(self):
+        """Verify that Shadow Ursaluna (CP 4000, 234 HP) correctly extracts CP 4000."""
+        img_ursaluna = os.path.join(SAMPLES_DIR, "cp4000_ursaluna_shadow.png")
+        res = classify_pokemon_from_image(img_ursaluna)
+        self.assertEqual(res["species"], "Ursaluna")
+        self.assertEqual(res["cp"], 4000)
+        self.assertEqual(res["hp"], 234)
+        self.assertEqual(res["candy_family"], "TEDDIURSA")
+
 
 if __name__ == "__main__":
     unittest.main()

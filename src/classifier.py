@@ -159,6 +159,7 @@ def validate_or_correct_cp_for_species(species_name: str, detected_cp: Optional[
         '3': ['2', '8'],
         '2': ['3', '7'],
         '1': ['7', '4'],
+        '4': ['1'],
         '7': ['1', '2'],
         '6': ['8', '5'],
         '5': ['6']
@@ -186,6 +187,18 @@ def validate_or_correct_cp_for_species(species_name: str, detected_cp: Optional[
                     c_val = int(truncated[:i] + repl + truncated[i+1:])
                     if 10 <= c_val <= 6000:
                         candidates_to_test.append(c_val)
+
+    # 3. Trailing zero recovery (e.g. '40' for Ursaluna where trailing zeros were washed out, but true CP is 4000)
+    for mult in (10, 100):
+        c_mult = detected_cp * mult
+        if 10 <= c_mult <= 6000:
+            candidates_to_test.append(c_mult)
+        for i, ch in enumerate(cp_str):
+            if ch in confusions:
+                for repl in confusions[ch]:
+                    sub_val = int(cp_str[:i] + repl + cp_str[i+1:]) * mult
+                    if 10 <= sub_val <= 6000:
+                        candidates_to_test.append(sub_val)
 
     for cand_val in candidates_to_test:
         if is_stat_combination_possible(species_data, cand_val, hp):
