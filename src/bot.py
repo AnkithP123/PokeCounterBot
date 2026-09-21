@@ -229,7 +229,7 @@ async def on_message(message: discord.Message):
         )
         await message.add_reaction("❓")
         await message.reply(
-            f"❓ Could not detect CP. Next expected CP is {game.next_expected_cp}.",
+            f"❓ Could not detect CP. Next expected CP is still {game.next_expected_cp}.",
             mention_author=False
         )
         return

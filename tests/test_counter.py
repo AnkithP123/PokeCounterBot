@@ -144,7 +144,7 @@ class TestPokeCounterGame(unittest.TestCase):
                 self.content = content
 
         history = [
-            FakeMessage("❓ Could not detect CP. Next expected CP is 16."),
+            FakeMessage("❓ Could not detect CP. Next expected CP is still 16."),
             FakeMessage("15 ✅"),
         ]
 
