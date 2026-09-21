@@ -156,17 +156,19 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
                     return cands0[0]
 
     # Pass 1: Prioritize explicit CP-prefixed matches across crops & channels
+    all_prefixed: List[int] = []
     for (y1, y2, x1, x2) in crops:
         crop = img[y1:y2, x1:x2]
         if crop.size == 0:
             continue
 
         min_bgr = np.minimum(crop[:, :, 0], np.minimum(crop[:, :, 1], crop[:, :, 2]))
-        channels = [crop[:, :, 0], min_bgr]
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        channels = [crop[:, :, 0], min_bgr, gray]
 
-        prefixed: List[int] = []
+        crop_prefixed: List[int] = []
 
-        for th in [215, 230, 245]:
+        for th in [215, 225, 230, 245]:
             for chan in channels:
                 scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
                 _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
@@ -176,21 +178,29 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
                 found_here = False
                 for is_p, v in _parse_all_candidates(txt):
                     if is_p:
-                        prefixed.append(v)
+                        crop_prefixed.append(v)
+                        all_prefixed.append(v)
                         found_here = True
                 if not found_here:
                     txt6 = run_fast_ocr(bordered, psm=6, whitelist=whitelist)
                     for is_p, v in _parse_all_candidates(txt6):
                         if is_p:
-                            prefixed.append(v)
+                            crop_prefixed.append(v)
+                            all_prefixed.append(v)
 
             # Early exit: if we have consistent prefixed candidate agreement, break early
-            if len(prefixed) >= 2 and Counter(prefixed).most_common(1)[0][1] >= 2:
+            if len(crop_prefixed) >= 2 and Counter(crop_prefixed).most_common(1)[0][1] >= 2:
                 break
 
-        if prefixed:
-            counts = Counter(prefixed)
-            return sorted(counts.keys(), key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
+        if crop_prefixed:
+            counts = Counter(crop_prefixed)
+            if counts.most_common(1)[0][1] >= 2:
+                valid_cands = [k for k, c in counts.items() if c >= 2]
+                return sorted(valid_cands, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
+
+    if all_prefixed:
+        counts = Counter(all_prefixed)
+        return sorted(counts.keys(), key=lambda k: (counts[k], len(str(k))), reverse=True)[0]
 
     # Pass 2: Fallback for sprites where CP letters are obscured (e.g. Gimmighoul coin rim)
     unprefixed: List[int] = []

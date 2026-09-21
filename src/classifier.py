@@ -425,24 +425,23 @@ def extract_caught_header_species(img: np.ndarray) -> Optional[str]:
 def detect_appraisal_screen(img: np.ndarray) -> bool:
     """
     Detects whether the screenshot is an Appraisal screen (Attack/Defense/HP IV bars).
-    Fast check: checks for colored orange/red IV bar pixels (<1ms).
+    Appraisal screens never display Stardust counters, Power Up, or Evolve buttons.
     """
     h, w = img.shape[:2]
-    bars_crop = img[int(h * 0.65):int(h * 0.95), int(w * 0.15):int(w * 0.90)]
-    if bars_crop.size > 0:
-        bgr_orange = np.array([25, 148, 232], dtype=float)
-        bgr_red = np.array([121, 127, 228], dtype=float)
-        diff_o = np.linalg.norm(bars_crop.astype(float) - bgr_orange, axis=2)
-        diff_r = np.linalg.norm(bars_crop.astype(float) - bgr_red, axis=2)
-        if np.sum((diff_o < 60) | (diff_r < 60)) >= 200:
-            return True
-
     bottom_crop = img[int(h * 0.50):, :]
     gray = cv2.cvtColor(bottom_crop, cv2.COLOR_BGR2GRAY)
     txt = run_fast_ocr(gray, psm=3)
-    appraisal_keywords = {"attack", "defense", "appraise", "appraisal"}
-    found_keywords = sum(1 for kw in appraisal_keywords if re.search(r'\b' + kw + r'\b', txt, re.IGNORECASE))
-    return found_keywords >= 1 or "LUCKY POKEMON" in txt.upper()
+
+    # Standard profile screens contain Stardust, Candy, Power Up, or Evolve
+    if re.search(r'\b(?:stardust|power\s*up|evolve)\b', txt, re.IGNORECASE):
+        return False
+
+    has_atk = bool(re.search(r'\battack\b', txt, re.IGNORECASE))
+    has_def = bool(re.search(r'\bdefense\b', txt, re.IGNORECASE))
+    if has_atk and has_def:
+        return True
+
+    return "LUCKY POKEMON" in txt.upper()
 
 
 def extract_appraisal_species(img: np.ndarray) -> Optional[str]:
