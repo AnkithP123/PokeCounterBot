@@ -253,18 +253,20 @@ async def on_message(message: discord.Message):
         async def update_with_species():
             try:
                 async with message.channel.typing():
-                    res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes)
+                    res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes, known_cp=extracted_cp)
                     species = res.get("species")
+                    final_cp = res.get("cp") or extracted_cp
             except Exception as ex:
                 logger.error("Error classifying species on count: %s", ex)
                 species = None
+                final_cp = extracted_cp
 
             if species:
                 species_name = species
             else:
                 species_name = "Unknown Species"
 
-            final_text = f"{species_name} CP {extracted_cp} ✅{consecutive_warning}"
+            final_text = f"{species_name} CP {final_cp} ✅{consecutive_warning}"
             try:
                 await reply_msg.edit(content=final_text)
             except Exception as edit_err:
@@ -508,6 +510,12 @@ async def cmd_classify(interaction: discord.Interaction, image: discord.Attachme
     hp = res.get("hp")
     candy = res.get("candy_family")
     explanation = res.get("explanation", "")
+    stardust = res.get("stardust")
+    candy_count = res.get("candy_count")
+    powerup_dust = res.get("powerup_stardust")
+    powerup_candy = res.get("powerup_candy")
+    level = res.get("estimated_level")
+    ivs = res.get("appraisal_ivs")
 
     if not species:
         desc = "⚠️ **Could not identify the Pokémon species.**\n"
@@ -531,6 +539,23 @@ async def cmd_classify(interaction: discord.Interaction, image: discord.Attachme
         embed.add_field(name="HP", value=f"`{hp}`", inline=True)
     if candy:
         embed.add_field(name="Candy Family", value=f"`{candy}`", inline=True)
+    if stardust is not None:
+        embed.add_field(name="Stardust", value=f"⭐ `{stardust:,}`", inline=True)
+    if candy_count is not None:
+        embed.add_field(name="Candy Stock", value=f"🍬 `{candy_count}`", inline=True)
+    if powerup_dust is not None:
+        pu_str = f"`{powerup_dust:,} Dust`"
+        if powerup_candy:
+            pu_str += f" + `{powerup_candy} Candy`"
+        if level:
+            pu_str += f" *(Lvl {level})*"
+        embed.add_field(name="Power Up", value=pu_str, inline=True)
+    if ivs:
+        embed.add_field(
+            name="Appraisal IVs",
+            value=f"**{ivs['percent']}%** (Atk: `{ivs['atk']}`, Def: `{ivs['def']}`, HP: `{ivs['sta']}`)",
+            inline=False
+        )
     if explanation:
         embed.set_footer(text=explanation)
 

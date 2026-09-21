@@ -10,3 +10,15 @@ services:
       resources:
         limits:
           memory: 512M
+
+  poke-counter-dashboard:
+    build: .
+    container_name: poke-counter-dashboard
+    restart: unless-stopped
+    command: ["python", "-m", "src.server", "--port", "8090"]
+    ports:
+      - "8090:8090"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
