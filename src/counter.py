@@ -31,8 +31,8 @@ class PokeCounterGame:
         if not content:
             return None
 
-        # Check for reset / error message first
-        if "❌" in content:
+        # Check for reset / error / warning message first
+        if "❌" in content or "❓" in content:
             return None
 
         clean_text = content.strip()
@@ -65,6 +65,9 @@ class PokeCounterGame:
         for msg in bot_messages:
             # We check the content of the bot's messages
             content = getattr(msg, "content", str(msg))
+            if "❓" in content:
+                # Warning message for unrecognized image does not affect or reset the count
+                continue
             parsed = self.parse_last_bot_message(content)
             if parsed is not None:
                 self.current_cp = parsed

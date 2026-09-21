@@ -766,7 +766,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     resultsContent.style.display = 'flex';
 
     resSpecies.textContent = data.species || 'Unknown Pokémon';
-    resFamily.textContent = data.candy_family || 'None';
+    resFamily.textContent = data.candy_family || 'Unknown Family';
     resCandidates.textContent = data.candidates && data.candidates.length > 0 
       ? `${data.candidates.length} Candidate${data.candidates.length > 1 ? 's' : ''}` 
       : 'Direct Match';
@@ -775,22 +775,22 @@ HTML_CONTENT = """<!DOCTYPE html>
     resLatency.innerHTML = `⚡ ${serverMs} ms`;
     resLatency.style.color = serverMs < 400 ? 'var(--success)' : (serverMs < 800 ? 'var(--pokemon-yellow)' : 'var(--pokemon-red)');
 
-    resCp.textContent = data.cp !== null ? `CP ${data.cp}` : '---';
-    resHp.textContent = data.hp !== null ? `${data.hp} HP` : '---';
-    resFamilyBadge.textContent = data.candy_family ? data.candy_family : '---';
+    resCp.textContent = data.cp !== null ? `CP ${data.cp}` : 'Unknown CP';
+    resHp.textContent = data.hp !== null ? `${data.hp} HP` : 'Unknown HP';
+    resFamilyBadge.textContent = data.candy_family ? data.candy_family : 'Unknown Family';
 
-    resStardust.textContent = (data.stardust !== null && data.stardust !== undefined) ? data.stardust.toLocaleString() : '---';
-    resCandyStock.textContent = (data.candy_count !== null && data.candy_count !== undefined) ? `${data.candy_count}` : '---';
+    resStardust.textContent = (data.stardust !== null && data.stardust !== undefined) ? data.stardust.toLocaleString() : 'Not detected';
+    resCandyStock.textContent = (data.candy_count !== null && data.candy_count !== undefined) ? `${data.candy_count}` : 'Not detected';
 
     if (data.powerup_stardust) {
       const puCandy = data.powerup_candy ? ` + ${data.powerup_candy} 🍬` : '';
       const lvl = data.estimated_level ? ` (${data.estimated_level})` : '';
       resPowerUp.textContent = `${data.powerup_stardust.toLocaleString()} ⭐${puCandy}${lvl}`;
     } else {
-      resPowerUp.textContent = '---';
+      resPowerUp.textContent = 'Not detected';
     }
 
-    resExplanation.textContent = data.explanation || 'No explanation available.';
+    resExplanation.textContent = data.explanation || 'Could not determine species or stats from this screenshot.';
 
     if (data.appraisal_ivs) {
       ivSection.style.display = 'flex';
@@ -816,8 +816,8 @@ HTML_CONTENT = """<!DOCTYPE html>
     card.className = 'history-card';
     card.innerHTML = `
       <div>
-        <div class="hist-name">${data.species || 'Unknown'}</div>
-        <div class="hist-meta">CP ${data.cp || '?'} • ${data.hp ? data.hp + ' HP' : ''}</div>
+        <div class="hist-name">${data.species || 'Unknown Pokémon'}</div>
+        <div class="hist-meta">${data.cp ? 'CP ' + data.cp : 'Unknown CP'}${data.hp ? ' • ' + data.hp + ' HP' : ''}</div>
       </div>
       <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: ${ms < 400 ? 'var(--success)' : 'var(--pokemon-yellow)'};">
         ${ms}ms

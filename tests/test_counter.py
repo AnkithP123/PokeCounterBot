@@ -135,6 +135,23 @@ class TestPokeCounterGame(unittest.TestCase):
         self.assertIsNone(game.current_cp)
         self.assertEqual(game.next_expected_cp, 10)
 
+    def test_history_recovery_skips_unknown_cp_warnings(self):
+        """Verify that unknown CP warning messages with ❓ are skipped and previous count is preserved."""
+        game = PokeCounterGame(starting_cp=10)
+
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        history = [
+            FakeMessage("❓ Could not detect a Pokémon CP in this image. The count has not been broken — next expected CP is still 16."),
+            FakeMessage("15 ✅"),
+        ]
+
+        game.recover_from_history(history)
+        self.assertEqual(game.current_cp, 15)
+        self.assertEqual(game.next_expected_cp, 16)
+
 
 if __name__ == "__main__":
     unittest.main()

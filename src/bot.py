@@ -228,6 +228,12 @@ async def on_message(message: discord.Message):
             message.channel.name
         )
         await message.add_reaction("❓")
+        await message.reply(
+            f"❓ **Could not detect a Pokémon CP in this image.**\n"
+            f"The count has not been broken — next expected CP is still **{game.next_expected_cp}**.\n"
+            "*(Make sure the CP banner near the top of the Pokémon screen is clearly visible and not cropped.)*",
+            mention_author=False
+        )
         return
 
     logger.info(
