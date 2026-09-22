@@ -110,5 +110,6 @@ class PokeCounterGame:
             # Wrong count! Reset state
             self.current_cp = None
             self.last_user_id = None
-            msg = f"{extracted_cp} ❌ Wrong CP, begin at {self.starting_cp}."
+            msg = f"{extracted_cp} ❌ Wrong CP, should have been {expected}. Begin at {self.starting_cp}."
             return False, msg
+

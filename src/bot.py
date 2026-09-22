@@ -80,28 +80,42 @@ def get_game_for_channel(channel_id: int) -> PokeCounterGame:
     return games[channel_id]
 
 
-async def sync_game_state_from_channel(channel: discord.TextChannel) -> None:
+async def sync_game_state_from_channel(
+    channel: discord.TextChannel,
+    before_message: Optional[discord.Message] = None
+) -> PokeCounterGame:
     """Recovers the current game state by inspecting the bot's past messages in the channel."""
     game = get_game_for_channel(channel.id)
     guild_name = channel.guild.name if channel.guild else "Unknown"
-    logger.info("Syncing game state for [%s] #%s (ID: %s)...", guild_name, channel.name, channel.id)
     bot_messages = []
+    has_history = False
     try:
-        async for msg in channel.history(limit=200):
-            if msg.author.id == bot.user.id:
-                bot_messages.append(msg)
+        if hasattr(channel, "history"):
+            history_kwargs: Dict[str, Any] = {"limit": 100}
+            if before_message is not None:
+                history_kwargs["before"] = before_message
 
-        game.recover_from_history(bot_messages)
-        synced_channels.add(channel.id)
-        logger.info(
-            "Synced [%s] #%s: Current CP: %s, Next expected CP: %s",
-            guild_name,
-            channel.name,
-            game.current_cp,
-            game.next_expected_cp
-        )
+            history_iter = channel.history(**history_kwargs)
+            if hasattr(history_iter, "__aiter__"):
+                has_history = True
+                async for msg in history_iter:
+                    if getattr(msg, "author", None) and msg.author.id == bot.user.id:
+                        bot_messages.append(msg)
+
+        if bot_messages:
+            game.recover_from_history(bot_messages)
+            synced_channels.add(channel.id)
+            logger.info(
+                "Synced [%s] #%s from chat: Current CP: %s, Next expected CP: %s",
+                guild_name,
+                channel.name,
+                game.current_cp,
+                game.next_expected_cp
+            )
     except Exception as e:
         logger.error("Failed to read channel history for [%s] #%s: %s", guild_name, channel.name, e)
+
+    return game
 
 
 @bot.event
@@ -347,12 +361,10 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-    # Ensure channel history has been synced
-    if message.channel.id not in synced_channels:
-        await sync_game_state_from_channel(message.channel)
-
     attachment = image_attachments[0]
-    game = get_game_for_channel(message.channel.id)
+
+    # Always determine the current count and next expected CP directly from the chat
+    game = await sync_game_state_from_channel(message.channel, before_message=message)
 
     logger.info(
         "Processing image from %s in [%s] #%s (file: %s, size: %d bytes)",
@@ -525,7 +537,7 @@ async def cmd_status(interaction: discord.Interaction):
         )
         return
 
-    game = get_game_for_channel(target_channel.id)
+    game = await sync_game_state_from_channel(target_channel)
     current_val = f"`{game.current_cp}`" if game.current_cp is not None else "*None (Game not started or reset)*"
     expected_val = f"`{game.next_expected_cp}`"
 
@@ -698,7 +710,7 @@ async def cmd_check(interaction: discord.Interaction, image: discord.Attachment,
 
     status_extra = ""
     if target_channel:
-        game = get_game_for_channel(target_channel.id)
+        game = await sync_game_state_from_channel(target_channel)
         if extracted_cp == game.next_expected_cp:
             status_extra = f"\n🎯 **Matches next expected CP ({game.next_expected_cp})!** Ready to count."
         else:

@@ -43,7 +43,7 @@ class TestPokeCounterGame(unittest.TestCase):
         # Wrong count: 13 instead of 11
         ok, msg = game.process_count(user_id=2, extracted_cp=13)
         self.assertFalse(ok)
-        self.assertIn("13 ❌ Wrong CP, begin at 10.", msg)
+        self.assertIn("13 ❌ Wrong CP, should have been 11. Begin at 10.", msg)
         self.assertIsNone(game.current_cp)
         self.assertEqual(game.next_expected_cp, 10)
 
@@ -171,6 +171,27 @@ class TestPokeCounterGame(unittest.TestCase):
         self.assertEqual(game.next_expected_cp, 68)
 
 
+    def test_history_recovery_from_chat_overrides_stale_memory(self):
+        """Verify that recovering from chat history sets the exact CP from the chat."""
+        game = PokeCounterGame(starting_cp=10)
+        # Pretend memory had a stale or incorrect value
+        game.current_cp = 999
+
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        history = [
+            FakeMessage("Pikachu CP 42 ✅"),
+            FakeMessage("Bulbasaur CP 41 ✅"),
+        ]
+
+        game.recover_from_history(history)
+        self.assertEqual(game.current_cp, 42)
+        self.assertEqual(game.next_expected_cp, 43)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
