@@ -158,13 +158,15 @@ async def test_enter_hp_modal_still_impossible_submission():
     # Original message must NOT change
     reply_msg.edit.assert_not_awaited()
 
-    # Correction message must be edited to tell them it's impossible
-    corr_msg.edit.assert_awaited_once()
-    assert "still mathematically impossible" in corr_msg.edit.call_args.kwargs["content"]
+    # Correction message with button must be deleted
+    corr_msg.delete.assert_awaited_once()
 
-    # Must not delete correction message
-    corr_msg.delete.assert_not_awaited()
+    # Ephemeral message must be sent
+    interaction.response.send_message.assert_awaited_once()
+    assert interaction.response.send_message.call_args.kwargs["ephemeral"] is True
+    assert "still mathematically impossible" in interaction.response.send_message.call_args.args[0]
 
     # Game state must NOT advance
     assert game.current_cp == 67
+
 

@@ -306,23 +306,20 @@ class EnterHpModal(discord.ui.Modal, title="Verify Pokémon HP"):
             )
         else:
             # If they enter a still impossible one:
-            # Don't change the reaction or message, but change the other message to tell them it's impossible.
-            still_impossible_text = (
-                f"❌ {self.parent_view.target_message.author.mention} CP {self.parent_view.extracted_cp} with HP {entered_hp} "
-                f"is still mathematically impossible for {display_name}. "
-                f"Please upload an unedited screenshot."
-            )
+            # Don't change the reaction or original message.
+            # Delete the message with the interaction button, keeping only the ephemeral message.
+            self.parent_view.resolved = True
+            self.parent_view.stop()
+            active_stat_corrections.pop(self.parent_view.channel_id, None)
+
             if self.parent_view.correction_msg:
                 try:
-                    await self.parent_view.correction_msg.edit(
-                        content=still_impossible_text,
-                        view=self.parent_view
-                    )
+                    await self.parent_view.correction_msg.delete()
                 except Exception as e:
-                    logger.warning("Could not edit correction message on invalid HP: %s", e)
+                    logger.warning("Could not delete correction message on invalid HP: %s", e)
 
             await interaction.response.send_message(
-                f"❌ CP {self.parent_view.extracted_cp} with HP {entered_hp} is still mathematically impossible for {display_name}.",
+                f"❌ CP {self.parent_view.extracted_cp} with HP {entered_hp} is still mathematically impossible for {display_name}. Please upload an unedited screenshot.",
                 ephemeral=True
             )
 
