@@ -37,8 +37,13 @@ class PokeCounterGame:
 
         clean_text = content.strip()
 
-        # 1. Match checkmark pattern first: e.g. "10 ✅", "Ditto CP 10 ✅", ":slow: CP 11 ✅", "⏳ 11 ✅"
-        match_checkmark = re.search(r'(?:^|[^\d])(\d+)\s*✅', clean_text)
+        # 1. Match checkmark pattern with CP and optional reference/tada:
+        # e.g. "Pikachu CP 69 (nice) ✅", "Pikachu CP 100 ✅ 🎉", ":slow: CP 11 ✅", "10 ✅"
+        match_cp_check = re.search(r'\bCP\s*[:#-]?\s*(\d+)(?:\s*\([^)]+\))?\s*✅', clean_text, re.IGNORECASE)
+        if match_cp_check:
+            return int(match_cp_check.group(1))
+
+        match_checkmark = re.search(r'(?:^|[^\d])(\d+)(?:\s*\([^)]+\))?\s*✅', clean_text)
         if match_checkmark:
             return int(match_checkmark.group(1))
 

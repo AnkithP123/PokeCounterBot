@@ -247,6 +247,36 @@ class TestSlashCommands(unittest.TestCase):
         interaction.response.send_message.assert_called_once()
         self.assertIn("valid image", interaction.response.send_message.call_args[0][0])
 
+    def test_format_cp_display_references(self):
+        """Verify format_cp_display formats references in parentheses correctly."""
+        from src.bot import format_cp_display
+        self.assertEqual(format_cp_display(69), "69 (nice)")
+        self.assertEqual(format_cp_display(67), "67 (SIX SEVEN)")
+        self.assertEqual(format_cp_display(42), "42 (the answer)")
+        self.assertEqual(format_cp_display(151), "151 (Kanto complete!)")
+        self.assertEqual(format_cp_display(420), "420 (blaze it)")
+        self.assertEqual(format_cp_display(50), "50")
+
+    def test_milestone_suffix(self):
+        """Verify get_milestone_suffix adds tada for 100th, 200th, 250th, 300th, etc."""
+        from src.bot import get_milestone_suffix, is_milestone_cp
+        self.assertTrue(is_milestone_cp(100))
+        self.assertTrue(is_milestone_cp(200))
+        self.assertTrue(is_milestone_cp(250))
+        self.assertTrue(is_milestone_cp(300))
+        self.assertTrue(is_milestone_cp(350))
+        self.assertTrue(is_milestone_cp(400))
+        self.assertTrue(is_milestone_cp(500))
+
+        self.assertFalse(is_milestone_cp(10))
+        self.assertFalse(is_milestone_cp(50))
+        self.assertFalse(is_milestone_cp(99))
+        self.assertFalse(is_milestone_cp(101))
+
+        self.assertEqual(get_milestone_suffix(100), " 🎉")
+        self.assertEqual(get_milestone_suffix(250), " 🎉")
+        self.assertEqual(get_milestone_suffix(69), "")
+
 
 if __name__ == "__main__":
     unittest.main()

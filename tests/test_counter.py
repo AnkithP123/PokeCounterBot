@@ -190,6 +190,20 @@ class TestPokeCounterGame(unittest.TestCase):
         self.assertEqual(game.current_cp, 42)
         self.assertEqual(game.next_expected_cp, 43)
 
+    def test_parse_reference_and_milestone_messages(self):
+        """Verify that parse_last_bot_message correctly extracts CP from messages with references and milestone tada."""
+        game = PokeCounterGame(starting_cp=10)
+        self.assertEqual(game.parse_last_bot_message("Pikachu CP 67 (SIX SEVEN) ✅"), 67)
+        self.assertEqual(game.parse_last_bot_message("Pikachu CP 69 (nice) ✅"), 69)
+        self.assertEqual(game.parse_last_bot_message("Pikachu CP 100 ✅ 🎉"), 100)
+        self.assertEqual(game.parse_last_bot_message("Pikachu CP 250 ✅ 🎉"), 250)
+        self.assertEqual(game.parse_last_bot_message("Pikachu CP 300 ✅ 🎉"), 300)
+        self.assertEqual(game.parse_last_bot_message(":slow: CP 69 (nice) ✅"), 69)
+        self.assertEqual(game.parse_last_bot_message(":slow: CP 100 ✅ 🎉"), 100)
+        self.assertEqual(game.parse_last_bot_message("Mew CP 151 (Kanto complete!) ✅"), 151)
+        self.assertEqual(game.parse_last_bot_message("Porygon CP 404 (not found) ✅"), 404)
+        self.assertEqual(game.parse_last_bot_message("Oddish CP 420 (blaze it) ✅"), 420)
+
 
 if __name__ == "__main__":
     unittest.main()

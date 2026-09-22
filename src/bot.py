@@ -188,6 +188,60 @@ def get_particle_placeholder() -> str:
     return "✨"
 
 
+CP_REFERENCES: Dict[int, str] = {
+    42: "the answer",
+    67: "SIX SEVEN",
+    69: "nice",
+    151: "Kanto complete!",
+    251: "Johto complete!",
+    386: "Hoenn complete!",
+    404: "not found",
+    420: "blaze it",
+    493: "Sinnoh complete!",
+    649: "Unova complete!",
+    666: "cursed",
+    721: "Kalos complete!",
+    777: "jackpot!",
+    809: "Alola complete!",
+    898: "Galar complete!",
+    999: "max coins",
+    1025: "National Dex complete!",
+    1337: "elite",
+}
+
+
+def format_cp_display(cp: int) -> str:
+    """
+    Formats the CP number with cultural or game references in parentheses if applicable.
+    e.g. 69 -> "69 (nice)", 67 -> "67 (SIX SEVEN)"
+    """
+    ref = CP_REFERENCES.get(cp)
+    if ref:
+        return f"{cp} ({ref})"
+    return str(cp)
+
+
+def is_milestone_cp(cp: int) -> bool:
+    """
+    Returns True for milestones: 100th, 200th, 250th, 300th, 350th, etc.
+    (100, 200, and multiples of 50 for 250 and above).
+    """
+    if cp < 100:
+        return False
+    if cp in (100, 200):
+        return True
+    if cp >= 250 and cp % 50 == 0:
+        return True
+    return False
+
+
+def get_milestone_suffix(cp: int) -> str:
+    """
+    Returns celebration emoji ' 🎉' after checkmark for milestone counts (100th, 200th, 250th, 300th, etc.).
+    """
+    return " 🎉" if is_milestone_cp(cp) else ""
+
+
 class StatCorrectionView(discord.ui.View):
     def __init__(self, bot, target_message: discord.Message, reply_msg: discord.Message,
                  channel_id: int, user_id: int, extracted_cp: int, detected_hp: Optional[int],
@@ -287,7 +341,9 @@ class EnterHpModal(discord.ui.Modal, title="Verify Pokémon HP"):
             active_stat_corrections.pop(self.parent_view.channel_id, None)
 
             species_text = valid_species or display_name
-            final_text = f"{species_text} CP {self.parent_view.extracted_cp} ✅{self.parent_view.consecutive_warning}"
+            cp_disp = format_cp_display(self.parent_view.extracted_cp)
+            tada = get_milestone_suffix(self.parent_view.extracted_cp)
+            final_text = f"{species_text} CP {cp_disp} ✅{tada}{self.parent_view.consecutive_warning}"
             game.current_cp = self.parent_view.extracted_cp
             game.last_user_id = self.parent_view.user_id
 
@@ -298,6 +354,8 @@ class EnterHpModal(discord.ui.Modal, title="Verify Pokémon HP"):
                 pass
             try:
                 await self.parent_view.target_message.add_reaction("✅")
+                if tada:
+                    await self.parent_view.target_message.add_reaction("🎉")
             except Exception:
                 pass
 
@@ -417,10 +475,17 @@ async def on_message(message: discord.Message):
             asyncio.create_task(prior_corr.cleanup())
 
         await message.add_reaction("✅")
+        tada = get_milestone_suffix(extracted_cp)
+        if tada:
+            try:
+                await message.add_reaction("🎉")
+            except Exception:
+                pass
         # Build initial response with placeholder and checkmark at the end: e.g. ":slow: CP 11 ✅"
         consecutive_warning = "\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*" if "⚠️" in response_text else ""
         particle = get_particle_placeholder()
-        initial_text = f"{particle} CP {extracted_cp} ✅{consecutive_warning}"
+        cp_disp = format_cp_display(extracted_cp)
+        initial_text = f"{particle} CP {cp_disp} ✅{tada}{consecutive_warning}"
         reply_msg = await message.reply(initial_text, mention_author=False)
 
         # Classify species asynchronously in background and update the message
@@ -507,7 +572,9 @@ async def on_message(message: discord.Message):
             else:
                 species_name = "Unknown Species"
 
-            final_text = f"{species_name} CP {final_cp} ✅{consecutive_warning}"
+            cp_disp = format_cp_display(final_cp)
+            tada = get_milestone_suffix(final_cp)
+            final_text = f"{species_name} CP {cp_disp} ✅{tada}{consecutive_warning}"
             try:
                 await reply_msg.edit(content=final_text)
             except Exception as edit_err:
