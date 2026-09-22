@@ -61,7 +61,9 @@ def _get_thread_api(lang: str = "eng"):
 
     if lang not in _local.apis:
         try:
-            if _TESSDATA_PATH:
+            if lang == "number" and os.path.exists(os.path.join(LOCAL_TESSDATA, "number.traineddata")):
+                api = tesserocr.PyTessBaseAPI(path=LOCAL_TESSDATA, lang="number")
+            elif _TESSDATA_PATH:
                 api = tesserocr.PyTessBaseAPI(path=_TESSDATA_PATH, lang=lang)
             else:
                 api = tesserocr.PyTessBaseAPI(lang=lang)
@@ -117,6 +119,8 @@ def run_fast_ocr(
 
     # pytesseract fallback
     cfg = f"--psm {psm}"
+    if lang == "number" and os.path.exists(os.path.join(LOCAL_TESSDATA, "number.traineddata")):
+        cfg += f' --tessdata-dir "{LOCAL_TESSDATA}"'
     if whitelist:
         cfg += f" -c tessedit_char_whitelist={whitelist}"
     try:

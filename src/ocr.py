@@ -211,6 +211,25 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
                     valid.append(k)
         return sorted(valid, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
 
+    # Pass 1.5: Trained number model fallback (specialized for Pokemon GO CP font and glare)
+    number_prefixed: List[int] = []
+    for (y1, y2, x1, x2) in crops[:3]:
+        crop = img[y1:y2, x1:x2]
+        if crop.size == 0:
+            continue
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        scaled = cv2.resize(gray, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
+        for th in (220, 230, 215, 240):
+            _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
+            bordered = cv2.copyMakeBorder(b, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+            txt = run_fast_ocr(bordered, psm=7, lang="number")
+            for is_p, v in _parse_all_candidates(txt):
+                if is_p:
+                    number_prefixed.append(v)
+        if number_prefixed:
+            counts = Counter(number_prefixed)
+            return counts.most_common(1)[0][0]
+
     # Pass 2: Fallback for sprites where CP letters are obscured (e.g. Gimmighoul coin rim)
     unprefixed: List[int] = []
     for (y1, y2, x1, x2) in crops[:2]:
