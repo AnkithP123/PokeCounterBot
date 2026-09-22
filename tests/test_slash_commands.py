@@ -269,7 +269,7 @@ class TestSlashCommands(unittest.TestCase):
         """Verify get_species_emoji_info maps requested Pokémon to their custom emojis."""
         from src.bot import get_species_emoji_info
         expected_mappings = {
-            "Eevee": ":EeeveeHeart:",
+            "Eevee": ":EeveeHeart:",
             "Machamp": ":FlexChamp:",
             "Mr. Mime": ":GASP:",
             "Chikorita": ":HUHH:",

@@ -198,7 +198,7 @@ CP_REFERENCES: Dict[int, str] = {
 }
 
 SPECIES_EMOJI_NAMES: Dict[str, str] = {
-    "eevee": "EeeveeHeart",
+    "eevee": "EeveeHeart",
     "machamp": "FlexChamp",
     "mr mime": "GASP",
     "mr. mime": "GASP",
