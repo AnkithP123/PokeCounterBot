@@ -2,7 +2,7 @@ import os
 import sys
 import asyncio
 import logging
-from typing import Optional, Dict, Set, Any
+from typing import Optional, Dict, Set, Any, Tuple
 
 import discord
 from discord.ext import commands
@@ -192,22 +192,69 @@ CP_REFERENCES: Dict[int, str] = {
     42: "the answer",
     67: "SIX SEVEN",
     69: "nice",
-    151: "Kanto complete!",
-    251: "Johto complete!",
-    386: "Hoenn complete!",
     404: "not found",
-    420: "blaze it",
-    493: "Sinnoh complete!",
-    649: "Unova complete!",
-    666: "cursed",
-    721: "Kalos complete!",
+    666: "😈",
     777: "jackpot!",
-    809: "Alola complete!",
-    898: "Galar complete!",
-    999: "max coins",
-    1025: "National Dex complete!",
-    1337: "elite",
 }
+
+SPECIES_EMOJI_NAMES: Dict[str, str] = {
+    "eevee": "EeeveeHeart",
+    "machamp": "FlexChamp",
+    "mr mime": "GASP",
+    "mr. mime": "GASP",
+    "chikorita": "HUHH",
+    "charmander": "INFERNO",
+    "rowlet": "NotLikeThis",
+    "grookey": "ONLIFESUPPORT",
+    "grimer": "Pog",
+    "munchlax": "Popcorn",
+    "sylveon": "STARSTRUCK",
+    "pikachu": "Shocked",
+    "wigglytuff": "TARGETSIGHTED",
+    "jigglypuff": "TRIGGERED",
+    "psyduck": "WOW",
+    "bidoof": "bidoofCryLaugh",
+    "buizel": "buizelPing",
+    "fuecoco": "hehe",
+    "pachirisu": "pachiThinking",
+    "politoed": "politoadHands",
+    "politoad": "politoadHands",
+    "scorbunny": "scoreThumbsUp",
+    "seel": "sips",
+    "slowpoke": "squint",
+    "diglett": "sus",
+    "togekiss": "togeSmile",
+    "umbreon": "umbreally",
+    "wailmer": "wailmDep",
+    "wobbuffet": "wob7",
+    "wobuffet": "wob7",
+    "wooper": "woo",
+}
+
+
+def get_species_emoji_info(species: Optional[str]) -> Tuple[Optional[Any], Optional[str]]:
+    """
+    Returns (emoji_obj_for_reaction, emoji_string_for_message) for a species if defined.
+    Matches custom emojis by name from connected servers, falling back to :{name}: syntax.
+    """
+    if not species:
+        return None, None
+
+    clean = species.lower().strip()
+    target_name = None
+    for key, em_name in SPECIES_EMOJI_NAMES.items():
+        if key in clean:
+            target_name = em_name
+            break
+
+    if not target_name:
+        return None, None
+
+    for em in bot.emojis:
+        if em.name.lower() == target_name.lower():
+            return em, str(em)
+
+    return None, f":{target_name}:"
 
 
 def format_cp_display(cp: int) -> str:
@@ -346,7 +393,9 @@ class EnterHpModal(discord.ui.Modal, title="Verify Pokémon HP"):
             species_text = valid_species or display_name
             cp_disp = format_cp_display(self.parent_view.extracted_cp)
             tada = get_milestone_suffix(self.parent_view.extracted_cp)
-            final_text = f"{species_text} CP {cp_disp} ✅{tada}{self.parent_view.consecutive_warning}"
+            em_obj, em_str = get_species_emoji_info(species_text)
+            species_part = f"{species_text} {em_str}" if em_str else species_text
+            final_text = f"{species_part} CP {cp_disp} ✅{tada}{self.parent_view.consecutive_warning}"
             game.current_cp = self.parent_view.extracted_cp
             game.last_user_id = self.parent_view.user_id
 
@@ -359,6 +408,8 @@ class EnterHpModal(discord.ui.Modal, title="Verify Pokémon HP"):
                 await self.parent_view.target_message.add_reaction("✅")
                 if tada:
                     await self.parent_view.target_message.add_reaction("🎉")
+                if em_obj:
+                    await self.parent_view.target_message.add_reaction(em_obj)
             except Exception:
                 pass
 
@@ -577,11 +628,19 @@ async def on_message(message: discord.Message):
 
             cp_disp = format_cp_display(final_cp)
             tada = get_milestone_suffix(final_cp)
-            final_text = f"{species_name} CP {cp_disp} ✅{tada}{consecutive_warning}"
+            em_obj, em_str = get_species_emoji_info(species_name)
+            species_part = f"{species_name} {em_str}" if em_str else species_name
+            final_text = f"{species_part} CP {cp_disp} ✅{tada}{consecutive_warning}"
             try:
                 await reply_msg.edit(content=final_text)
             except Exception as edit_err:
                 logger.warning("Could not edit count message with species: %s", edit_err)
+
+            if em_obj:
+                try:
+                    await message.add_reaction(em_obj)
+                except Exception as rx_err:
+                    logger.debug("Could not add species reaction: %s", rx_err)
 
         asyncio.create_task(update_with_species())
     else:

@@ -253,9 +253,54 @@ class TestSlashCommands(unittest.TestCase):
         self.assertEqual(format_cp_display(69), "69 (nice)")
         self.assertEqual(format_cp_display(67), "67 (SIX SEVEN)")
         self.assertEqual(format_cp_display(42), "42 (the answer)")
-        self.assertEqual(format_cp_display(151), "151 (Kanto complete!)")
-        self.assertEqual(format_cp_display(420), "420 (blaze it)")
+        self.assertEqual(format_cp_display(404), "404 (not found)")
+        self.assertEqual(format_cp_display(666), "666 (😈)")
+        self.assertEqual(format_cp_display(777), "777 (jackpot!)")
+        # Verify removed references
+        self.assertEqual(format_cp_display(420), "420")
+        self.assertEqual(format_cp_display(999), "999")
+        self.assertEqual(format_cp_display(151), "151")
+        self.assertEqual(format_cp_display(251), "251")
+        self.assertEqual(format_cp_display(1025), "1025")
+        self.assertEqual(format_cp_display(1337), "1337")
         self.assertEqual(format_cp_display(50), "50")
+
+    def test_species_emoji_info(self):
+        """Verify get_species_emoji_info maps requested Pokémon to their custom emojis."""
+        from src.bot import get_species_emoji_info
+        expected_mappings = {
+            "Eevee": ":EeeveeHeart:",
+            "Machamp": ":FlexChamp:",
+            "Mr. Mime": ":GASP:",
+            "Chikorita": ":HUHH:",
+            "Charmander": ":INFERNO:",
+            "Rowlet": ":NotLikeThis:",
+            "Grookey": ":ONLIFESUPPORT:",
+            "Grimer": ":Pog:",
+            "Munchlax": ":Popcorn:",
+            "Sylveon": ":STARSTRUCK:",
+            "Pikachu": ":Shocked:",
+            "Wigglytuff": ":TARGETSIGHTED:",
+            "Jigglypuff": ":TRIGGERED:",
+            "Psyduck": ":WOW:",
+            "Bidoof": ":bidoofCryLaugh:",
+            "Buizel": ":buizelPing:",
+            "Fuecoco": ":hehe:",
+            "Pachirisu": ":pachiThinking:",
+            "Politoed": ":politoadHands:",
+            "Scorbunny": ":scoreThumbsUp:",
+            "Seel": ":sips:",
+            "Slowpoke": ":squint:",
+            "Diglett": ":sus:",
+            "Togekiss": ":togeSmile:",
+            "Umbreon": ":umbreally:",
+            "Wailmer": ":wailmDep:",
+            "Wobbuffet": ":wob7:",
+            "Wooper": ":woo:",
+        }
+        for poke, expected_emoji in expected_mappings.items():
+            _, emoji_str = get_species_emoji_info(poke)
+            self.assertEqual(emoji_str, expected_emoji, f"Mismatch for {poke}")
 
     def test_milestone_suffix(self):
         """Verify get_milestone_suffix adds tada for 100, 200, 250-500 (by 50), and 1000, 1500, 2000, 2500, 3000, 4000, 5000."""
