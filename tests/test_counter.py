@@ -152,6 +152,25 @@ class TestPokeCounterGame(unittest.TestCase):
         self.assertEqual(game.current_cp, 15)
         self.assertEqual(game.next_expected_cp, 16)
 
+    def test_history_recovery_skips_impossible_pokemon_warnings(self):
+        """Verify that impossible Pokemon warning and correction messages are skipped and do not reset count."""
+        game = PokeCounterGame(starting_cp=10)
+
+        class FakeMessage:
+            def __init__(self, content):
+                self.content = content
+
+        history = [
+            FakeMessage("❌ <@123> CP 68 with HP 109 is still mathematically impossible for Bunnelby / Diggersby. Please upload an unedited screenshot."),
+            FakeMessage("⚠️ Impossible Pokémon: CP 68 with HP 109 is mathematically impossible for Bunnelby / Diggersby. Please upload an unedited screenshot. Next expected CP is still 68."),
+            FakeMessage("67 ✅"),
+        ]
+
+        game.recover_from_history(history)
+        self.assertEqual(game.current_cp, 67)
+        self.assertEqual(game.next_expected_cp, 68)
+
 
 if __name__ == "__main__":
     unittest.main()
+

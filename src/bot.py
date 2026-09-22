@@ -2,7 +2,7 @@ import os
 import sys
 import asyncio
 import logging
-from typing import Optional, Dict, Set
+from typing import Optional, Dict, Set, Any
 
 import discord
 from discord.ext import commands
@@ -50,6 +50,7 @@ bot = PokeCounterClient()
 # Multi-server support: Each channel maintains its own independent counting game
 games: Dict[int, PokeCounterGame] = {}
 synced_channels: Set[int] = set()
+active_stat_corrections: Dict[int, Any] = {}
 
 
 def is_target_channel(channel: discord.abc.GuildChannel) -> bool:
@@ -176,11 +177,13 @@ def get_particle_placeholder() -> str:
 class StatCorrectionView(discord.ui.View):
     def __init__(self, bot, target_message: discord.Message, reply_msg: discord.Message,
                  channel_id: int, user_id: int, extracted_cp: int, detected_hp: Optional[int],
-                 family_display: str, consecutive_warning: str, previous_cp: Optional[int]):
+                 family_display: str, consecutive_warning: str, previous_cp: Optional[int],
+                 previous_last_user_id: Optional[int]):
         super().__init__(timeout=300)
         self.bot = bot
         self.target_message = target_message
         self.reply_msg = reply_msg
+        self.correction_msg: Optional[discord.Message] = None
         self.channel_id = channel_id
         self.user_id = user_id
         self.extracted_cp = extracted_cp
@@ -188,7 +191,18 @@ class StatCorrectionView(discord.ui.View):
         self.family_display = family_display
         self.consecutive_warning = consecutive_warning
         self.previous_cp = previous_cp
+        self.previous_last_user_id = previous_last_user_id
         self.resolved = False
+
+    async def cleanup(self):
+        if not self.resolved:
+            self.resolved = True
+            self.stop()
+            if self.correction_msg:
+                try:
+                    await self.correction_msg.delete()
+                except Exception:
+                    pass
 
     @discord.ui.button(label="Enter Real HP", style=discord.ButtonStyle.primary, emoji="✏️")
     async def btn_enter_hp(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -209,26 +223,13 @@ class StatCorrectionView(discord.ui.View):
     async def on_timeout(self):
         if not self.resolved:
             self.resolved = True
-            game = get_game_for_channel(self.channel_id)
-            if game.current_cp == self.extracted_cp:
-                game.current_cp = self.previous_cp
-            try:
-                await self.target_message.remove_reaction("✅", self.bot.user)
-            except Exception:
-                pass
-            try:
-                await self.target_message.add_reaction("❌")
-            except Exception:
-                pass
-            timeout_text = (
-                f"❌ {self.target_message.author.mention} **Impossible Pokémon**: CP {self.extracted_cp} with HP {self.detected_hp} "
-                f"is mathematically impossible for {self.family_display}. "
-                f"Time to correct HP expired. Please upload a different or unedited screenshot."
-            )
-            try:
-                await self.reply_msg.edit(content=timeout_text, view=None)
-            except Exception as e:
-                logger.warning("Failed to edit timed-out stat correction message: %s", e)
+            for item in self.children:
+                item.disabled = True
+            if self.correction_msg:
+                try:
+                    await self.correction_msg.edit(view=self)
+                except Exception:
+                    pass
 
 
 class EnterHpModal(discord.ui.Modal, title="Verify Pokémon HP"):
@@ -269,43 +270,56 @@ class EnterHpModal(discord.ui.Modal, title="Verify Pokémon HP"):
         if is_valid:
             self.parent_view.resolved = True
             self.parent_view.stop()
+            active_stat_corrections.pop(self.parent_view.channel_id, None)
+
             species_text = valid_species or display_name
             final_text = f"{species_text} CP {self.parent_view.extracted_cp} ✅{self.parent_view.consecutive_warning}"
             game.current_cp = self.parent_view.extracted_cp
+            game.last_user_id = self.parent_view.user_id
 
+            # 1. Change back to a check
+            try:
+                await self.parent_view.target_message.remove_reaction("🤨", self.parent_view.bot.user)
+            except Exception:
+                pass
+            try:
+                await self.parent_view.target_message.add_reaction("✅")
+            except Exception:
+                pass
+
+            # 2. Edit the original message
             try:
                 await self.parent_view.reply_msg.edit(content=final_text, view=None)
             except Exception as e:
                 logger.warning("Could not edit message after HP fix: %s", e)
+
+            # 3. Make the other message disappear
+            if self.parent_view.correction_msg:
+                try:
+                    await self.parent_view.correction_msg.delete()
+                except Exception as e:
+                    logger.warning("Could not delete correction message: %s", e)
 
             await interaction.response.send_message(
                 f"✅ HP verified as **{entered_hp}**! Updated count to **{species_text} CP {self.parent_view.extracted_cp}**.",
                 ephemeral=True
             )
         else:
-            self.parent_view.resolved = True
-            self.parent_view.stop()
-            if game.current_cp == self.parent_view.extracted_cp:
-                game.current_cp = self.parent_view.previous_cp
-
-            try:
-                await self.parent_view.target_message.remove_reaction("✅", self.parent_view.bot.user)
-            except Exception:
-                pass
-            try:
-                await self.parent_view.target_message.add_reaction("❌")
-            except Exception:
-                pass
-
-            invalid_text = (
-                f"❌ {self.parent_view.target_message.author.mention} **Impossible Pokémon**: CP {self.parent_view.extracted_cp} with HP {entered_hp} "
-                f"is mathematically impossible for {display_name}. "
-                f"Please upload a different or unedited screenshot."
+            # If they enter a still impossible one:
+            # Don't change the reaction or message, but change the other message to tell them it's impossible.
+            still_impossible_text = (
+                f"❌ {self.parent_view.target_message.author.mention} CP {self.parent_view.extracted_cp} with HP {entered_hp} "
+                f"is still mathematically impossible for {display_name}. "
+                f"Please upload an unedited screenshot."
             )
-            try:
-                await self.parent_view.reply_msg.edit(content=invalid_text, view=None)
-            except Exception as e:
-                logger.warning("Could not edit message on invalid HP: %s", e)
+            if self.parent_view.correction_msg:
+                try:
+                    await self.parent_view.correction_msg.edit(
+                        content=still_impossible_text,
+                        view=self.parent_view
+                    )
+                except Exception as e:
+                    logger.warning("Could not edit correction message on invalid HP: %s", e)
 
             await interaction.response.send_message(
                 f"❌ CP {self.parent_view.extracted_cp} with HP {entered_hp} is still mathematically impossible for {display_name}.",
@@ -384,9 +398,15 @@ async def on_message(message: discord.Message):
     )
 
     previous_cp = game.current_cp
+    previous_last_user_id = game.last_user_id
     is_correct, response_text = game.process_count(message.author.id, extracted_cp)
 
     if is_correct:
+        # Clean up any lingering active stat correction in this channel
+        if message.channel.id in active_stat_corrections:
+            prior_corr = active_stat_corrections.pop(message.channel.id)
+            asyncio.create_task(prior_corr.cleanup())
+
         await message.add_reaction("✅")
         # Build initial response with placeholder and checkmark at the end: e.g. ":slow: CP 11 ✅"
         consecutive_warning = "\n⚠️ *Notice: Counting twice in a row will be disabled in the future.*" if "⚠️" in response_text else ""
@@ -413,11 +433,36 @@ async def on_message(message: discord.Message):
                 family_display = "Unknown Species"
 
             if stat_status == "IMPOSSIBLE":
+                # Impossible Pokémon NEVER resets the count and does not advance it
+                cur_game = get_game_for_channel(message.channel.id)
+                if cur_game.current_cp == extracted_cp:
+                    cur_game.current_cp = previous_cp
+                    cur_game.last_user_id = previous_last_user_id
+
+                # Change checkmark reaction to raised eyebrow emoji
+                try:
+                    await message.remove_reaction("✅", bot.user)
+                except Exception as ex:
+                    logger.warning("Could not remove checkmark reaction: %s", ex)
+                try:
+                    await message.add_reaction("🤨")
+                except Exception as ex:
+                    logger.warning("Could not add raised eyebrow reaction: %s", ex)
+
+                # Edit initial message:
+                # Warning sign at beginning, says it's impossible saying to upload unedited,
+                # at end lets them know the number is still that number
                 warning_text = (
-                    f"⚠️ {message.author.mention} **Impossible Stat Combination Detected**\n"
-                    f"**{family_display}** cannot have **CP {extracted_cp}** with **HP {detected_hp}** in Pokémon GO.\n\n"
-                    f"If OCR misread your HP, click below to enter the correct HP from your screenshot:"
+                    f"⚠️ Impossible Pokémon: CP {extracted_cp} with HP {detected_hp} is mathematically impossible for {family_display}. "
+                    f"Please upload an unedited screenshot. "
+                    f"Next expected CP is still {extracted_cp}."
                 )
+                try:
+                    await reply_msg.edit(content=warning_text, view=None)
+                except Exception as edit_err:
+                    logger.warning("Could not edit initial count message with warning: %s", edit_err)
+
+                # Reply to that message with button to enter correct HP
                 view = StatCorrectionView(
                     bot=bot,
                     target_message=message,
@@ -428,12 +473,24 @@ async def on_message(message: discord.Message):
                     detected_hp=detected_hp,
                     family_display=family_display,
                     consecutive_warning=consecutive_warning,
-                    previous_cp=previous_cp
+                    previous_cp=previous_cp,
+                    previous_last_user_id=previous_last_user_id
+                )
+                active_stat_corrections[message.channel.id] = view
+
+                correction_text = (
+                    f"{message.author.mention} If the HP in your screenshot was misread, "
+                    f"click below to enter the correct HP from your screenshot:"
                 )
                 try:
-                    await reply_msg.edit(content=warning_text, view=view)
-                except Exception as edit_err:
-                    logger.warning("Could not edit message with stat correction view: %s", edit_err)
+                    correction_msg = await reply_msg.reply(
+                        correction_text,
+                        view=view,
+                        mention_author=True
+                    )
+                    view.correction_msg = correction_msg
+                except Exception as reply_err:
+                    logger.warning("Could not send correction reply: %s", reply_err)
                 return
 
             if species:

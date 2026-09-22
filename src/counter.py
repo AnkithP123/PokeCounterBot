@@ -32,7 +32,7 @@ class PokeCounterGame:
             return None
 
         # Check for reset / error / warning message first
-        if "❌" in content or "❓" in content:
+        if "❌" in content or "❓" in content or "Impossible Pokémon" in content or "mathematically impossible" in content:
             return None
 
         clean_text = content.strip()
@@ -65,8 +65,8 @@ class PokeCounterGame:
         for msg in bot_messages:
             # We check the content of the bot's messages
             content = getattr(msg, "content", str(msg))
-            if "❓" in content:
-                # Warning message for unrecognized image does not affect or reset the count
+            if "❓" in content or "Impossible Pokémon" in content or "mathematically impossible" in content:
+                # Warning or impossible stat message does not affect or reset the count
                 continue
             parsed = self.parse_last_bot_message(content)
             if parsed is not None:

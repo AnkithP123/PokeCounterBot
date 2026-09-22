@@ -42,3 +42,129 @@ def test_impossible_stat_classification_preserves_cp():
     # Must format family with slashes
     assert res["family_display"] == "Bunnelby / Diggersby"
     assert "cannot have CP 68 with HP 109" in res["stat_error_reason"]
+
+
+@pytest.mark.asyncio
+async def test_enter_hp_modal_valid_submission():
+    from unittest.mock import AsyncMock, MagicMock
+    from src.bot import get_game_for_channel
+
+    game = get_game_for_channel(999991)
+    game.current_cp = 67
+    game.last_user_id = 111
+
+    target_msg = MagicMock()
+    target_msg.remove_reaction = AsyncMock()
+    target_msg.add_reaction = AsyncMock()
+    target_msg.author.mention = "<@123>"
+
+    reply_msg = MagicMock()
+    reply_msg.edit = AsyncMock()
+
+    corr_msg = MagicMock()
+    corr_msg.delete = AsyncMock()
+
+    view = StatCorrectionView(
+        bot=MagicMock(),
+        target_message=target_msg,
+        reply_msg=reply_msg,
+        channel_id=999991,
+        user_id=123,
+        extracted_cp=68,
+        detected_hp=109,
+        family_display="Bunnelby / Diggersby",
+        consecutive_warning="",
+        previous_cp=67,
+        previous_last_user_id=111
+    )
+    view.correction_msg = corr_msg
+
+    modal = EnterHpModal(view)
+    modal.hp_input = MagicMock()
+    modal.hp_input.value = "35"  # Valid HP for Bunnelby CP 68
+
+    interaction = MagicMock()
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    # Must switch reaction from 🤨 to ✅
+    target_msg.remove_reaction.assert_awaited_once_with("🤨", view.bot.user)
+    target_msg.add_reaction.assert_awaited_once_with("✅")
+
+    # Original message edited to approved count
+    reply_msg.edit.assert_awaited_once()
+    assert "Bunnelby CP 68 ✅" in reply_msg.edit.call_args.kwargs["content"]
+
+    # Other message must disappear
+    corr_msg.delete.assert_awaited_once()
+
+    # Game state advanced
+    assert game.current_cp == 68
+    assert game.last_user_id == 123
+
+
+@pytest.mark.asyncio
+async def test_enter_hp_modal_still_impossible_submission():
+    from unittest.mock import AsyncMock, MagicMock
+    from src.bot import get_game_for_channel
+
+    game = get_game_for_channel(999992)
+    game.current_cp = 67
+    game.last_user_id = 111
+
+    target_msg = MagicMock()
+    target_msg.remove_reaction = AsyncMock()
+    target_msg.add_reaction = AsyncMock()
+    target_msg.author.mention = "<@123>"
+
+    reply_msg = MagicMock()
+    reply_msg.edit = AsyncMock()
+
+    corr_msg = MagicMock()
+    corr_msg.edit = AsyncMock()
+    corr_msg.delete = AsyncMock()
+
+    view = StatCorrectionView(
+        bot=MagicMock(),
+        target_message=target_msg,
+        reply_msg=reply_msg,
+        channel_id=999992,
+        user_id=123,
+        extracted_cp=68,
+        detected_hp=109,
+        family_display="Bunnelby / Diggersby",
+        consecutive_warning="",
+        previous_cp=67,
+        previous_last_user_id=111
+    )
+    view.correction_msg = corr_msg
+
+    modal = EnterHpModal(view)
+    modal.hp_input = MagicMock()
+    modal.hp_input.value = "110"  # Still impossible
+
+    interaction = MagicMock()
+    interaction.response = MagicMock()
+    interaction.response.send_message = AsyncMock()
+
+    await modal.on_submit(interaction)
+
+    # Reaction must NOT change
+    target_msg.remove_reaction.assert_not_awaited()
+    target_msg.add_reaction.assert_not_awaited()
+
+    # Original message must NOT change
+    reply_msg.edit.assert_not_awaited()
+
+    # Correction message must be edited to tell them it's impossible
+    corr_msg.edit.assert_awaited_once()
+    assert "still mathematically impossible" in corr_msg.edit.call_args.kwargs["content"]
+
+    # Must not delete correction message
+    corr_msg.delete.assert_not_awaited()
+
+    # Game state must NOT advance
+    assert game.current_cp == 67
+
