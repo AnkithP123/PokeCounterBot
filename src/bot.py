@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 from src.ocr import extract_cp_from_image
 from src.counter import PokeCounterGame
-from src.classifier import classify_pokemon_from_image
+from src.classifier import classify_pokemon_from_image, check_hp_validity_for_candidate
 
 # Configure logging
 logging.basicConfig(
@@ -173,6 +173,146 @@ def get_particle_placeholder() -> str:
     return "✨"
 
 
+class StatCorrectionView(discord.ui.View):
+    def __init__(self, bot, target_message: discord.Message, reply_msg: discord.Message,
+                 channel_id: int, user_id: int, extracted_cp: int, detected_hp: Optional[int],
+                 family_display: str, consecutive_warning: str, previous_cp: Optional[int]):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.target_message = target_message
+        self.reply_msg = reply_msg
+        self.channel_id = channel_id
+        self.user_id = user_id
+        self.extracted_cp = extracted_cp
+        self.detected_hp = detected_hp
+        self.family_display = family_display
+        self.consecutive_warning = consecutive_warning
+        self.previous_cp = previous_cp
+        self.resolved = False
+
+    @discord.ui.button(label="Enter Real HP", style=discord.ButtonStyle.primary, emoji="✏️")
+    async def btn_enter_hp(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            is_mod = False
+            if isinstance(interaction.user, discord.Member):
+                is_mod = interaction.user.guild_permissions.manage_messages
+            if not is_mod:
+                await interaction.response.send_message(
+                    "❌ Only the person who uploaded this screenshot can correct the HP.",
+                    ephemeral=True
+                )
+                return
+
+        modal = EnterHpModal(self)
+        await interaction.response.send_modal(modal)
+
+    async def on_timeout(self):
+        if not self.resolved:
+            self.resolved = True
+            game = get_game_for_channel(self.channel_id)
+            if game.current_cp == self.extracted_cp:
+                game.current_cp = self.previous_cp
+            try:
+                await self.target_message.remove_reaction("✅", self.bot.user)
+            except Exception:
+                pass
+            try:
+                await self.target_message.add_reaction("❌")
+            except Exception:
+                pass
+            timeout_text = (
+                f"❌ {self.target_message.author.mention} **Impossible Pokémon**: CP {self.extracted_cp} with HP {self.detected_hp} "
+                f"is mathematically impossible for {self.family_display}. "
+                f"Time to correct HP expired. Please upload a different or unedited screenshot."
+            )
+            try:
+                await self.reply_msg.edit(content=timeout_text, view=None)
+            except Exception as e:
+                logger.warning("Failed to edit timed-out stat correction message: %s", e)
+
+
+class EnterHpModal(discord.ui.Modal, title="Verify Pokémon HP"):
+    def __init__(self, view: StatCorrectionView):
+        super().__init__()
+        self.parent_view = view
+        default_val = str(view.detected_hp) if view.detected_hp is not None else ""
+        self.hp_input = discord.ui.TextInput(
+            label="Actual HP (from screenshot)",
+            placeholder="e.g. 35",
+            default=default_val,
+            required=True,
+            min_length=1,
+            max_length=4
+        )
+        self.add_item(self.hp_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        val = self.hp_input.value.strip()
+        try:
+            entered_hp = int(val)
+        except ValueError:
+            await interaction.response.send_message(
+                f"❌ '{val}' is not a valid number. Please enter a valid HP integer.",
+                ephemeral=True
+            )
+            return
+
+        is_valid, valid_species, family_disp = check_hp_validity_for_candidate(
+            self.parent_view.family_display,
+            self.parent_view.extracted_cp,
+            entered_hp
+        )
+
+        display_name = family_disp or self.parent_view.family_display
+        game = get_game_for_channel(self.parent_view.channel_id)
+
+        if is_valid:
+            self.parent_view.resolved = True
+            self.parent_view.stop()
+            species_text = valid_species or display_name
+            final_text = f"{species_text} CP {self.parent_view.extracted_cp} ✅{self.parent_view.consecutive_warning}"
+            game.current_cp = self.parent_view.extracted_cp
+
+            try:
+                await self.parent_view.reply_msg.edit(content=final_text, view=None)
+            except Exception as e:
+                logger.warning("Could not edit message after HP fix: %s", e)
+
+            await interaction.response.send_message(
+                f"✅ HP verified as **{entered_hp}**! Updated count to **{species_text} CP {self.parent_view.extracted_cp}**.",
+                ephemeral=True
+            )
+        else:
+            self.parent_view.resolved = True
+            self.parent_view.stop()
+            if game.current_cp == self.parent_view.extracted_cp:
+                game.current_cp = self.parent_view.previous_cp
+
+            try:
+                await self.parent_view.target_message.remove_reaction("✅", self.parent_view.bot.user)
+            except Exception:
+                pass
+            try:
+                await self.parent_view.target_message.add_reaction("❌")
+            except Exception:
+                pass
+
+            invalid_text = (
+                f"❌ {self.parent_view.target_message.author.mention} **Impossible Pokémon**: CP {self.parent_view.extracted_cp} with HP {entered_hp} "
+                f"is mathematically impossible for {display_name}. "
+                f"Please upload a different or unedited screenshot."
+            )
+            try:
+                await self.parent_view.reply_msg.edit(content=invalid_text, view=None)
+            except Exception as e:
+                logger.warning("Could not edit message on invalid HP: %s", e)
+
+            await interaction.response.send_message(
+                f"❌ CP {self.parent_view.extracted_cp} with HP {entered_hp} is still mathematically impossible for {display_name}.",
+                ephemeral=True
+            )
+
+
 @bot.event
 async def on_message(message: discord.Message):
     # Ignore own messages or other bot messages
@@ -243,6 +383,7 @@ async def on_message(message: discord.Message):
         game.next_expected_cp
     )
 
+    previous_cp = game.current_cp
     is_correct, response_text = game.process_count(message.author.id, extracted_cp)
 
     if is_correct:
@@ -253,17 +394,47 @@ async def on_message(message: discord.Message):
         initial_text = f"{particle} CP {extracted_cp} ✅{consecutive_warning}"
         reply_msg = await message.reply(initial_text, mention_author=False)
 
-        # Classify species asynchronously in background and update the message: e.g. "Pikachu CP 11 ✅" or "Unknown Species CP 11 ✅"
+        # Classify species asynchronously in background and update the message
         async def update_with_species():
             try:
                 async with message.channel.typing():
                     res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes, known_cp=extracted_cp)
                     species = res.get("species")
-                    final_cp = res.get("cp") or extracted_cp
+                    final_cp = extracted_cp
+                    stat_status = res.get("stat_status", "VALID")
+                    detected_hp = res.get("hp")
+                    family_display = res.get("family_display") or species or "This Pokémon"
             except Exception as ex:
                 logger.error("Error classifying species on count: %s", ex)
                 species = None
                 final_cp = extracted_cp
+                stat_status = "VALID"
+                detected_hp = None
+                family_display = "Unknown Species"
+
+            if stat_status == "IMPOSSIBLE":
+                warning_text = (
+                    f"⚠️ {message.author.mention} **Impossible Stat Combination Detected**\n"
+                    f"**{family_display}** cannot have **CP {extracted_cp}** with **HP {detected_hp}** in Pokémon GO.\n\n"
+                    f"If OCR misread your HP, click below to enter the correct HP from your screenshot:"
+                )
+                view = StatCorrectionView(
+                    bot=bot,
+                    target_message=message,
+                    reply_msg=reply_msg,
+                    channel_id=message.channel.id,
+                    user_id=message.author.id,
+                    extracted_cp=extracted_cp,
+                    detected_hp=detected_hp,
+                    family_display=family_display,
+                    consecutive_warning=consecutive_warning,
+                    previous_cp=previous_cp
+                )
+                try:
+                    await reply_msg.edit(content=warning_text, view=view)
+                except Exception as edit_err:
+                    logger.warning("Could not edit message with stat correction view: %s", edit_err)
+                return
 
             if species:
                 species_name = species

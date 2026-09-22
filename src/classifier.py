@@ -3,7 +3,7 @@ import re
 import math
 import json
 import logging
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Tuple
 import io
 from PIL import Image
 
@@ -579,6 +579,52 @@ def extract_appraisal_ivs(img: np.ndarray) -> Optional[Dict[str, Any]]:
     }
 
 
+def check_hp_validity_for_candidate(species_or_family: str, cp: int, hp: int) -> Tuple[bool, Optional[str], Optional[str]]:
+    """
+    Checks if any member of a family/species can legitimately have (cp, hp).
+    Returns (is_valid: bool, matching_species: Optional[str], family_display: Optional[str]).
+    """
+    if not species_or_family or not cp or not hp:
+        return False, None, None
+
+    candidates = []
+    if " / " in species_or_family:
+        names = [s.strip() for s in species_or_family.split(" / ")]
+        for name in names:
+            fam_key = SPECIES_TO_FAMILY.get(name.lower())
+            if fam_key and fam_key in FAMILIES:
+                candidates = FAMILIES[fam_key]
+                break
+    elif species_or_family.upper() in FAMILIES:
+        candidates = FAMILIES[species_or_family.upper()]
+    else:
+        fam_key = SPECIES_TO_FAMILY.get(species_or_family.lower())
+        if fam_key and fam_key in FAMILIES:
+            candidates = FAMILIES[fam_key]
+        else:
+            for fam_list in FAMILIES.values():
+                for m in fam_list:
+                    if m["name"].lower() == species_or_family.lower():
+                        candidates = fam_list
+                        break
+                if candidates:
+                    break
+
+    family_display = " / ".join([m["name"] for m in candidates]) if candidates else species_or_family
+
+    valid_matches = [
+        m["name"] for m in candidates
+        if is_stat_combination_possible(m, cp, hp)
+    ]
+
+    if valid_matches:
+        for vm in valid_matches:
+            if vm.lower() == species_or_family.lower():
+                return True, vm, family_display
+        return True, valid_matches[0], family_display
+    return False, None, family_display
+
+
 _UNKNOWN = object()
 
 
@@ -591,7 +637,10 @@ def _classify_pokemon_core(img: np.ndarray, cp: Optional[int]) -> Dict[str, Any]
         "candy_family": None,
         "candidates": [],
         "explanation": "",
-        "appraisal_ivs": None
+        "appraisal_ivs": None,
+        "stat_status": "VALID",
+        "stat_error_reason": None,
+        "family_display": None
     }
 
     # Detect Appraisal IV bars (Attack/Defense/Stamina) if active screen (<1ms check)
@@ -609,6 +658,7 @@ def _classify_pokemon_core(img: np.ndarray, cp: Optional[int]) -> Dict[str, Any]
         result["hp"] = hp
 
         if cp is None or hp is None:
+            result["stat_status"] = "UNKNOWN"
             if len(family_members) == 1:
                 result["species"] = family_members[0]["name"]
                 result["candidates"] = [family_members[0]["name"]]
@@ -638,20 +688,27 @@ def _classify_pokemon_core(img: np.ndarray, cp: Optional[int]) -> Dict[str, Any]
             if is_stat_combination_possible(m, cp, hp)
         ]
 
-        # If triangulation produced 0 matches, check if CP had an OCR confusion (e.g. '0' <-> '8', 20 vs 28)
-        if not valid_species and cp and hp:
-            for m in family_members:
-                corrected = validate_or_correct_cp_for_species(m["name"], cp, hp)
-                if corrected and corrected != cp:
-                    logger.info("Stat-validated CP: corrected %d to %d for %s", cp, corrected, m["name"])
-                    cp = corrected
-                    result["cp"] = cp
-                    valid_species = [
-                        fam["name"] for fam in family_members
-                        if is_stat_combination_possible(fam, cp, hp)
-                    ]
-                    break
+        family_display = " / ".join([m["name"] for m in family_members])
+        result["family_display"] = family_display
 
+        # If triangulation produced 0 matches, the stat combination is impossible for the entire family!
+        if not valid_species and cp and hp:
+            result["stat_status"] = "IMPOSSIBLE"
+            result["stat_error_reason"] = f"{family_display} cannot have CP {cp} with HP {hp} in Pokémon GO."
+            primary_name = extract_primary_name_from_image(img)
+            if primary_name and primary_name in names:
+                result["species"] = primary_name
+            else:
+                caught_species = extract_caught_header_species(img)
+                if caught_species and caught_species in names:
+                    result["species"] = caught_species
+                else:
+                    winner = disambiguate_candidates_with_vision(img, names)
+                    result["species"] = winner or family_members[0]["name"]
+            result["explanation"] = f"Impossible stats: {family_display} cannot have CP {cp} with HP {hp}."
+            return result
+
+        result["stat_status"] = "VALID"
         result["candidates"] = valid_species
 
         if len(valid_species) == 1:
