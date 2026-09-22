@@ -19,6 +19,7 @@ IMG_GIMMIGHOUL_12_PATH = os.path.join(SAMPLES_DIR, "cp12_gimmighoul_zard.png")
 IMG_SWAMPERT_PATH = os.path.join(SAMPLES_DIR, "cp3362_swampert.png")
 IMG_PORYGON_PATH = os.path.join(SAMPLES_DIR, "cp73_porygon_shiny.png")
 IMG_URSALUNA_PATH = os.path.join(SAMPLES_DIR, "cp4000_ursaluna_shadow.png")
+IMG_JANGMO_O_PATH = os.path.join(SAMPLES_DIR, "cp82_jangmo_o.png")
 
 
 class TestOCR(unittest.TestCase):
@@ -77,6 +78,10 @@ class TestOCR(unittest.TestCase):
     def test_extract_cp_ursaluna_4000(self):
         """Verify that Shadow Ursaluna screenshot resolves to CP 4000 instead of truncated 40 or 1000."""
         self.assertEqual(extract_cp_from_image(IMG_URSALUNA_PATH), 4000)
+
+    def test_extract_cp_jangmo_o_82(self):
+        """Verify that Jangmo-o screenshot resolves to CP 82 instead of hallucinated 1082."""
+        self.assertEqual(extract_cp_from_image(IMG_JANGMO_O_PATH), 82)
 
 
 

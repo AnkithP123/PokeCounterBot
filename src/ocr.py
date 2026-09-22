@@ -198,7 +198,7 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
                 valid = [k for k, c in counts.items() if c >= 2]
                 for v in list(valid):
                     for k in counts.keys():
-                        if len(str(k)) > len(str(v)) and (str(k).startswith(str(v)) or str(k).endswith(str(v))):
+                        if len(str(k)) > len(str(v)) and str(k).startswith(str(v)) and set(str(k)[len(str(v)):]) == {"0"}:
                             valid.append(k)
                 return sorted(valid, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
 
@@ -207,7 +207,7 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
         valid = [k for k, c in counts.items() if c >= 2] or list(counts.keys())
         for v in list(valid):
             for k in counts.keys():
-                if len(str(k)) > len(str(v)) and (str(k).startswith(str(v)) or str(k).endswith(str(v))):
+                if len(str(k)) > len(str(v)) and str(k).startswith(str(v)) and set(str(k)[len(str(v)):]) == {"0"}:
                     valid.append(k)
         return sorted(valid, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
 
@@ -226,9 +226,10 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
             for is_p, v in _parse_all_candidates(txt):
                 if is_p:
                     number_prefixed.append(v)
-        if number_prefixed:
+        if number_prefixed and len(number_prefixed) >= 2:
             counts = Counter(number_prefixed)
-            return counts.most_common(1)[0][0]
+            if counts.most_common(1)[0][1] >= 2:
+                return counts.most_common(1)[0][0]
 
     # Pass 2: Fallback for sprites where CP letters are obscured (e.g. Gimmighoul coin rim)
     unprefixed: List[int] = []
