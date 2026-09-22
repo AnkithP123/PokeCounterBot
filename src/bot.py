@@ -229,6 +229,13 @@ SPECIES_EMOJI_NAMES: Dict[str, str] = {
     "wobbuffet": "wob7",
     "wobuffet": "wob7",
     "wooper": "woo",
+    "ditto": "dittoDance",
+    "bellsprout": "bellDance",
+    "hitmontop": "breakitdown",
+    "spinda": "spinda",
+    "popplio": "PopplioDance",
+    "spheal": "ROLLIN",
+    "gimmighoul": "GREED",
 }
 
 

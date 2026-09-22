@@ -297,6 +297,13 @@ class TestSlashCommands(unittest.TestCase):
             "Wailmer": ":wailmDep:",
             "Wobbuffet": ":wob7:",
             "Wooper": ":woo:",
+            "Ditto": ":dittoDance:",
+            "Bellsprout": ":bellDance:",
+            "Hitmontop": ":breakitdown:",
+            "Spinda": ":spinda:",
+            "Popplio": ":PopplioDance:",
+            "Spheal": ":ROLLIN:",
+            "Gimmighoul": ":GREED:",
         }
         for poke, expected_emoji in expected_mappings.items():
             _, emoji_str = get_species_emoji_info(poke)
