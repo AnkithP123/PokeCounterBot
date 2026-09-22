@@ -258,7 +258,7 @@ class TestSlashCommands(unittest.TestCase):
         self.assertEqual(format_cp_display(50), "50")
 
     def test_milestone_suffix(self):
-        """Verify get_milestone_suffix adds tada for 100th, 200th, 250th, 300th, etc."""
+        """Verify get_milestone_suffix adds tada for 100, 200, 250-500 (by 50), and 1000, 1500, 2000, 2500, 3000, 4000, 5000."""
         from src.bot import get_milestone_suffix, is_milestone_cp
         self.assertTrue(is_milestone_cp(100))
         self.assertTrue(is_milestone_cp(200))
@@ -266,7 +266,25 @@ class TestSlashCommands(unittest.TestCase):
         self.assertTrue(is_milestone_cp(300))
         self.assertTrue(is_milestone_cp(350))
         self.assertTrue(is_milestone_cp(400))
+        self.assertTrue(is_milestone_cp(450))
         self.assertTrue(is_milestone_cp(500))
+
+        # Exclude 600-900
+        self.assertFalse(is_milestone_cp(550))
+        self.assertFalse(is_milestone_cp(600))
+        self.assertFalse(is_milestone_cp(700))
+        self.assertFalse(is_milestone_cp(800))
+        self.assertFalse(is_milestone_cp(900))
+        self.assertFalse(is_milestone_cp(950))
+
+        # Include major milestones
+        self.assertTrue(is_milestone_cp(1000))
+        self.assertTrue(is_milestone_cp(1500))
+        self.assertTrue(is_milestone_cp(2000))
+        self.assertTrue(is_milestone_cp(2500))
+        self.assertTrue(is_milestone_cp(3000))
+        self.assertTrue(is_milestone_cp(4000))
+        self.assertTrue(is_milestone_cp(5000))
 
         self.assertFalse(is_milestone_cp(10))
         self.assertFalse(is_milestone_cp(50))
@@ -275,6 +293,8 @@ class TestSlashCommands(unittest.TestCase):
 
         self.assertEqual(get_milestone_suffix(100), " 🎉")
         self.assertEqual(get_milestone_suffix(250), " 🎉")
+        self.assertEqual(get_milestone_suffix(1000), " 🎉")
+        self.assertEqual(get_milestone_suffix(600), "")
         self.assertEqual(get_milestone_suffix(69), "")
 
 

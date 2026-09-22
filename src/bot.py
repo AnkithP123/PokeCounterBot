@@ -223,14 +223,17 @@ def format_cp_display(cp: int) -> str:
 
 def is_milestone_cp(cp: int) -> bool:
     """
-    Returns True for milestones: 100th, 200th, 250th, 300th, 350th, etc.
-    (100, 200, and multiples of 50 for 250 and above).
+    Returns True for milestone CP counts:
+    - 100, 200
+    - Every 50 from 250 through 500 (250, 300, 350, 400, 450, 500)
+    - 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000
+    (Excludes 600-900).
     """
-    if cp < 100:
-        return False
     if cp in (100, 200):
         return True
-    if cp >= 250 and cp % 50 == 0:
+    if 250 <= cp <= 500 and cp % 50 == 0:
+        return True
+    if cp in (1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000):
         return True
     return False
 
