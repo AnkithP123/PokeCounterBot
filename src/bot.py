@@ -1,5 +1,8 @@
 import os
 import sys
+import io
+import time
+import re
 import asyncio
 import logging
 from typing import Optional, Dict, Set, Any, Tuple
@@ -51,6 +54,7 @@ bot = PokeCounterClient()
 games: Dict[int, PokeCounterGame] = {}
 synced_channels: Set[int] = set()
 active_stat_corrections: Dict[int, Any] = {}
+test_lock = asyncio.Lock()
 
 
 def is_target_channel(channel: discord.abc.GuildChannel) -> bool:
@@ -940,6 +944,110 @@ async def cmd_classify(interaction: discord.Interaction, image: discord.Attachme
 
     embed.set_thumbnail(url=image.url)
     await interaction.followup.send(embed=embed, ephemeral=not visible)
+
+
+def validate_test_target(target_str: Optional[str]) -> Optional[str]:
+    """Validates and sanitizes a test target path to ensure it is within tests/."""
+    if not target_str:
+        return "tests"
+    clean = target_str.strip()
+    if clean.startswith("-") or ".." in clean:
+        return None
+    if "::" in clean:
+        file_part, test_part = clean.split("::", 1)
+        if not re.match(r"^[A-Za-z0-9_\[\]\-]+$", test_part):
+            return None
+    else:
+        file_part = clean
+
+    norm_file = os.path.normpath(file_part)
+    base_tests_dir = os.path.abspath("tests")
+    full_path = os.path.abspath(norm_file)
+    if not (full_path == base_tests_dir or full_path.startswith(base_tests_dir + os.sep)):
+        return None
+    if not os.path.exists(full_path):
+        return None
+    return clean
+
+
+@bot.tree.command(name="test", description="Run the automated test suite on the server and view results.")
+@discord.app_commands.describe(
+    target="Optional test file or directory, e.g. tests/test_ocr.py (default: all tests)",
+    visible="Whether to make the result visible to everyone in the channel (default: False)"
+)
+async def cmd_test(interaction: discord.Interaction, target: Optional[str] = None, visible: bool = False):
+    target_arg = validate_test_target(target)
+    if target_arg is None:
+        await interaction.response.send_message(
+            f"❌ Invalid test target `{target}`. Must be a valid file or path inside `tests/`.",
+            ephemeral=True
+        )
+        return
+
+    if test_lock.locked():
+        await interaction.response.send_message(
+            "⏳ A test suite run is already in progress on the server. Please try again shortly.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=not visible)
+
+    async with test_lock:
+        t0 = time.time()
+        try:
+            cmd = [
+                sys.executable, "-m", "pytest",
+                "-q", "--tb=short", "--color=no", "--disable-warnings",
+                target_arg
+            ]
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+        except Exception as e:
+            logger.error("Error executing test suite: %s", e)
+            await interaction.followup.send(f"⚠️ Failed to execute test suite: {e}", ephemeral=not visible)
+            return
+
+        duration = time.time() - t0
+
+    out_text = (stdout.decode("utf-8", errors="replace") + "\n" + stderr.decode("utf-8", errors="replace")).strip()
+    passed = proc.returncode == 0
+    status_str = "✅ All tests passed" if passed else f"❌ Tests failed (exit code {proc.returncode})"
+    color = discord.Color.green() if passed else discord.Color.red()
+
+    embed = discord.Embed(
+        title="🧪 Test Suite Results",
+        color=color,
+        timestamp=discord.utils.utcnow()
+    )
+    embed.add_field(name="Status", value=status_str, inline=True)
+    embed.add_field(name="Duration", value=f"`{duration:.2f}s`", inline=True)
+    embed.add_field(name="Target", value=f"`{target_arg}`", inline=True)
+
+    file_attachment = None
+    if len(out_text) > 1800:
+        embed.description = f"```\n{out_text[-1800:]}\n```\n*(Full output attached)*"
+        file_attachment = discord.File(io.BytesIO(out_text.encode("utf-8")), filename="pytest_results.txt")
+    else:
+        embed.description = f"```\n{out_text}\n```" if out_text else "*(No output)*"
+
+    if file_attachment:
+        await interaction.followup.send(embed=embed, file=file_attachment, ephemeral=not visible)
+    else:
+        await interaction.followup.send(embed=embed, ephemeral=not visible)
+
+
+@bot.tree.command(name="run_tests", description="Alias for /test. Run the automated test suite on the server.")
+@discord.app_commands.describe(
+    target="Optional test file or directory, e.g. tests/test_ocr.py (default: all tests)",
+    visible="Whether to make the result visible to everyone in the channel (default: False)"
+)
+async def cmd_run_tests(interaction: discord.Interaction, target: Optional[str] = None, visible: bool = False):
+    await cmd_test.callback(interaction, target=target, visible=visible)
 
 
 

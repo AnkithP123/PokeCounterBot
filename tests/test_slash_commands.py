@@ -11,6 +11,10 @@ from src.bot import (
     cmd_set_count,
     cmd_set_number,
     cmd_classify,
+    cmd_test,
+    cmd_run_tests,
+    validate_test_target,
+    test_lock,
     get_game_for_channel,
     TARGET_CHANNEL_NAME
 )
@@ -18,7 +22,7 @@ from src.bot import (
 
 class TestSlashCommands(unittest.TestCase):
     def test_tree_commands_registered(self):
-        """Verify that slash commands status, count_status, rules, check, set_count, set_number, and classify are registered."""
+        """Verify that slash commands status, count_status, rules, check, set_count, set_number, classify, test, and run_tests are registered."""
         command_names = [cmd.name for cmd in bot.tree.get_commands()]
         self.assertIn("status", command_names)
         self.assertIn("count_status", command_names)
@@ -27,6 +31,8 @@ class TestSlashCommands(unittest.TestCase):
         self.assertIn("set_count", command_names)
         self.assertIn("set_number", command_names)
         self.assertIn("classify", command_names)
+        self.assertIn("test", command_names)
+        self.assertIn("run_tests", command_names)
 
     def test_legacy_text_command_removed(self):
         """Verify that !count_status is no longer registered as a prefix command."""
@@ -348,6 +354,140 @@ class TestSlashCommands(unittest.TestCase):
         self.assertEqual(get_milestone_suffix(1000), " 🎉")
         self.assertEqual(get_milestone_suffix(600), "")
         self.assertEqual(get_milestone_suffix(69), "")
+
+    def test_validate_test_target(self):
+        """Verify validate_test_target allows safe paths and blocks flags/traversal."""
+        self.assertEqual(validate_test_target(None), "tests")
+        self.assertEqual(validate_test_target(""), "tests")
+        self.assertEqual(validate_test_target("tests"), "tests")
+        self.assertEqual(validate_test_target("tests/test_slash_commands.py"), "tests/test_slash_commands.py")
+        self.assertEqual(
+            validate_test_target("tests/test_slash_commands.py::TestSlashCommands"),
+            "tests/test_slash_commands.py::TestSlashCommands"
+        )
+        # Rejections
+        self.assertIsNone(validate_test_target("-v"))
+        self.assertIsNone(validate_test_target("../src/bot.py"))
+        self.assertIsNone(validate_test_target("tests/../src/bot.py"))
+        self.assertIsNone(validate_test_target("src/bot.py"))
+        self.assertIsNone(validate_test_target("tests/test_slash_commands.py::bad;rm -rf /"))
+        self.assertIsNone(validate_test_target("tests/nonexistent_test_file.py"))
+
+    def test_cmd_test_invalid_target(self):
+        """Verify /test rejects invalid target arguments."""
+        import asyncio
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        asyncio.run(cmd_test.callback(interaction, target="-v"))
+        interaction.response.send_message.assert_called_once()
+        self.assertIn("Invalid test target", interaction.response.send_message.call_args[0][0])
+
+    def test_cmd_test_already_locked(self):
+        """Verify /test warns when a test suite is already executing."""
+        import asyncio
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+
+        async def run_when_locked():
+            await test_lock.acquire()
+            try:
+                await cmd_test.callback(interaction, target=None)
+            finally:
+                test_lock.release()
+
+        asyncio.run(run_when_locked())
+        interaction.response.send_message.assert_called_once()
+        self.assertIn("already in progress", interaction.response.send_message.call_args[0][0])
+
+    def test_cmd_test_success_mock(self):
+        """Verify /test runs subprocess, creates embed, and sends followup."""
+        import asyncio
+        from unittest.mock import patch
+
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup = MagicMock()
+        interaction.followup.send = AsyncMock()
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(b"62 passed in 8.5s\n", b""))
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)):
+            asyncio.run(cmd_test.callback(interaction, target="tests/test_slash_commands.py", visible=False))
+
+        interaction.response.defer.assert_called_once_with(ephemeral=True)
+        interaction.followup.send.assert_called_once()
+        call_kwargs = interaction.followup.send.call_args[1]
+        self.assertIn("embed", call_kwargs)
+        embed = call_kwargs["embed"]
+        self.assertEqual(embed.title, "🧪 Test Suite Results")
+        self.assertEqual(embed.color, discord.Color.green())
+        self.assertEqual(call_kwargs.get("ephemeral"), True)
+
+    def test_cmd_test_failure_mock(self):
+        """Verify /test displays red embed when tests fail."""
+        import asyncio
+        from unittest.mock import patch
+
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup = MagicMock()
+        interaction.followup.send = AsyncMock()
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.communicate = AsyncMock(return_value=(b"1 failed, 61 passed\n", b""))
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)):
+            asyncio.run(cmd_test.callback(interaction, target=None, visible=True))
+
+        interaction.response.defer.assert_called_once_with(ephemeral=False)
+        interaction.followup.send.assert_called_once()
+        call_kwargs = interaction.followup.send.call_args[1]
+        embed = call_kwargs["embed"]
+        self.assertEqual(embed.color, discord.Color.red())
+        self.assertEqual(call_kwargs.get("ephemeral"), False)
+
+    def test_cmd_test_long_output_attachment(self):
+        """Verify /test attaches a file when test output exceeds 1800 characters."""
+        import asyncio
+        from unittest.mock import patch
+
+        interaction = MagicMock(spec=discord.Interaction)
+        interaction.response = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup = MagicMock()
+        interaction.followup.send = AsyncMock()
+
+        long_output = b"test line\n" * 300  # ~3000 bytes
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.communicate = AsyncMock(return_value=(long_output, b""))
+
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)):
+            asyncio.run(cmd_test.callback(interaction, target=None, visible=False))
+
+        interaction.followup.send.assert_called_once()
+        call_kwargs = interaction.followup.send.call_args[1]
+        self.assertIn("file", call_kwargs)
+        self.assertIsInstance(call_kwargs["file"], discord.File)
+        self.assertEqual(call_kwargs["file"].filename, "pytest_results.txt")
+
+    def test_cmd_run_tests_alias(self):
+        """Verify /run_tests aliases /test."""
+        import asyncio
+        from unittest.mock import patch
+
+        interaction = MagicMock(spec=discord.Interaction)
+        with patch.object(cmd_test, "_callback", AsyncMock()) as mock_cmd_test:
+            asyncio.run(cmd_run_tests.callback(interaction, target="tests", visible=True))
+            mock_cmd_test.assert_called_once_with(interaction, target="tests", visible=True)
 
 
 if __name__ == "__main__":
