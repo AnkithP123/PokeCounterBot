@@ -47,6 +47,68 @@ class TestPokeCounterGame(unittest.TestCase):
         self.assertIsNone(game.current_cp)
         self.assertEqual(game.next_expected_cp, 10)
 
+    def test_default_disallows_consecutive_counts(self):
+        """Verify that double counting is disabled by default and breaks the chain."""
+        game = PokeCounterGame(starting_cp=10)
+        self.assertFalse(game.allow_consecutive_counts)
+
+        # User 1 sends 10
+        ok, msg = game.process_count(user_id=101, extracted_cp=10)
+        self.assertTrue(ok)
+        self.assertEqual(game.current_cp, 10)
+        self.assertEqual(game.last_user_id, 101)
+
+        # User 1 tries to send 11 -> breaks the chain!
+        ok, msg = game.process_count(user_id=101, extracted_cp=11)
+        self.assertFalse(ok)
+        self.assertIn("cannot count twice in a row", msg)
+        self.assertIsNone(game.current_cp)
+        self.assertIsNone(game.last_user_id)
+        self.assertEqual(game.next_expected_cp, 10)
+
+    def test_history_recovery_detects_reply_reference(self):
+        """Verify that history recovery detects who last counted via the message reply reference."""
+        game = PokeCounterGame(starting_cp=10)
+
+        class FakeAuthor:
+            def __init__(self, author_id):
+                self.id = author_id
+
+        class FakeResolved:
+            def __init__(self, author_id):
+                self.author = FakeAuthor(author_id)
+
+        class FakeReference:
+            def __init__(self, author_id):
+                self.resolved = FakeResolved(author_id)
+
+        class FakeReplyMessage:
+            def __init__(self, content, reply_to_user_id):
+                self.content = content
+                self.reference = FakeReference(reply_to_user_id)
+
+        history = [
+            FakeReplyMessage("Pikachu CP 11 ✅", reply_to_user_id=555),
+        ]
+
+        game.recover_from_history(history)
+        self.assertEqual(game.current_cp, 11)
+        self.assertEqual(game.last_user_id, 555)
+        self.assertEqual(game.next_expected_cp, 12)
+
+        # User 555 attempts to count 12 -> stopped for double counting!
+        ok, msg = game.process_count(user_id=555, extracted_cp=12)
+        self.assertFalse(ok)
+        self.assertIn("cannot count twice in a row", msg)
+        self.assertEqual(game.next_expected_cp, 10)  # chain broken
+
+        # Reset and verify a different user CAN count 12
+        game.recover_from_history(history)
+        ok, msg = game.process_count(user_id=777, extracted_cp=12)
+        self.assertTrue(ok)
+        self.assertEqual(game.current_cp, 12)
+        self.assertEqual(game.last_user_id, 777)
+
     def test_consecutive_count_restriction(self):
         game = PokeCounterGame(starting_cp=10, allow_consecutive_counts=False)
 

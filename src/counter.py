@@ -8,7 +8,7 @@ class PokeCounterGame:
     Can recover its state directly from the bot's own last message in the channel.
     """
 
-    def __init__(self, starting_cp: int = 10, allow_consecutive_counts: bool = True):
+    def __init__(self, starting_cp: int = 10, allow_consecutive_counts: bool = False):
         self.starting_cp = starting_cp
         self.allow_consecutive_counts = allow_consecutive_counts
         self.current_cp: Optional[int] = None
@@ -76,10 +76,29 @@ class PokeCounterGame:
             parsed = self.parse_last_bot_message(content)
             if parsed is not None:
                 self.current_cp = parsed
+
+                # Detect who counted this number:
+                # 1. Check if the message is in reply to anyone
+                user_id = None
+                ref = getattr(msg, "reference", None)
+                if ref:
+                    resolved = getattr(ref, "resolved", None)
+                    if resolved and getattr(resolved, "author", None):
+                        user_id = resolved.author.id
+
+                # 2. Check explicit attributes attached to msg
+                if user_id is None:
+                    if hasattr(msg, "last_user_id") and msg.last_user_id is not None:
+                        user_id = msg.last_user_id
+                    elif hasattr(msg, "user_id") and msg.user_id is not None:
+                        user_id = msg.user_id
+
+                self.last_user_id = user_id
                 return
             elif "❌" in content:
                 # The latest bot message was a reset, so next is starting_cp
                 self.current_cp = None
+                self.last_user_id = None
                 return
 
         # If no relevant bot messages found, count starts at starting_cp

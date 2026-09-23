@@ -23,9 +23,10 @@ Designed to run 24/7 on remote Linux servers or lightweight VPS containers with 
 1. Users upload Pokémon GO stat screenshots in `#poke-counter`.
 2. The bot extracts the Pokémon's CP:
    - If CP matches the required number: Bot reacts with `✅` and posts `{CP} ✅`.
-   - If CP does not match: Bot reacts with `❌` and posts `{Extracted_CP} ❌ Wrong CP, begin at 10.`
-   - If the image cannot be recognized as a Pokémon CP: Bot reacts with `❓` and warns the user without breaking the current streak.
-3. Users can type `!count_status` in `#poke-counter` to see the current count and next expected CP.
+   - If CP does not match: Bot reacts with `❌` and resets the game back to 10.
+   - If someone double counts (posts twice in a row): Bot reacts with `❌` and breaks the chain back to 10.
+   - If the image cannot be recognized as a Pokémon CP: Bot reacts with `❓` and informs the user without breaking the current streak.
+3. Users can run `/status` in `#poke-counter` to see the current count and next expected CP.
 
 ---
 
@@ -43,7 +44,7 @@ cp .env.example .env
 | `CHANNEL_NAME` | `poke-counter` | Channel name the bot listens to. |
 | `CHANNEL_ID` | *Optional* | Exact Discord Channel ID (takes precedence over name). |
 | `STARTING_CP` | `10` | The base number to count from when starting or resetting. |
-| `ALLOW_CONSECUTIVE_COUNTS` | `true` | Allow the same user to post multiple consecutive counts. |
+| `ALLOW_CONSECUTIVE_COUNTS` | `false` | Allow the same user to post multiple consecutive counts (default: false). |
 | `TESSERACT_CMD` | *Optional* | Custom path to the `tesseract` binary if not in `PATH`. |
 
 ---

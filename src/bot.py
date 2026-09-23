@@ -31,7 +31,7 @@ TARGET_CHANNEL_NAME = os.getenv("CHANNEL_NAME", "poke-counter").lower()
 TARGET_CHANNEL_ID_STR = os.getenv("CHANNEL_ID")
 TARGET_CHANNEL_ID: Optional[int] = int(TARGET_CHANNEL_ID_STR) if TARGET_CHANNEL_ID_STR else None
 STARTING_CP = int(os.getenv("STARTING_CP", "10"))
-ALLOW_CONSECUTIVE = os.getenv("ALLOW_CONSECUTIVE_COUNTS", "true").lower() in ("1", "true", "yes")
+ALLOW_CONSECUTIVE = os.getenv("ALLOW_CONSECUTIVE_COUNTS", "false").lower() in ("1", "true", "yes")
 
 class PokeCounterClient(commands.Bot):
     def __init__(self):
@@ -91,8 +91,8 @@ async def sync_game_state_from_channel(
     """Recovers the current game state by inspecting the bot's past messages in the channel."""
     game = get_game_for_channel(channel.id)
     guild_name = channel.guild.name if channel.guild else "Unknown"
+    all_channel_messages = []
     bot_messages = []
-    has_history = False
     try:
         if hasattr(channel, "history"):
             history_kwargs: Dict[str, Any] = {"limit": 100}
@@ -101,19 +101,53 @@ async def sync_game_state_from_channel(
 
             history_iter = channel.history(**history_kwargs)
             if hasattr(history_iter, "__aiter__"):
-                has_history = True
                 async for msg in history_iter:
+                    all_channel_messages.append(msg)
                     if getattr(msg, "author", None) and msg.author.id == bot.user.id:
+                        content = getattr(msg, "content", "")
+                        if "❓" in content or "Impossible Pokémon" in content or "mathematically impossible" in content:
+                            continue
+
+                        # Check if this confirmation message was in reply to anyone
+                        ref = getattr(msg, "reference", None)
+                        if ref:
+                            if not getattr(ref, "resolved", None) and getattr(ref, "message_id", None):
+                                if hasattr(channel, "fetch_message"):
+                                    try:
+                                        ref.resolved = await channel.fetch_message(ref.message_id)
+                                    except Exception as fetch_err:
+                                        logger.debug("Could not fetch referenced message %s: %s", ref.message_id, fetch_err)
+
                         bot_messages.append(msg)
+                        parsed = game.parse_last_bot_message(content)
+                        if parsed is not None or "❌" in content:
+                            break
 
         if bot_messages:
+            target_bot_msg = bot_messages[0]
+            # Fallback if reply reference was not present: find older non-bot message in history
+            if not getattr(target_bot_msg, "last_user_id", None):
+                ref = getattr(target_bot_msg, "reference", None)
+                if ref and getattr(ref, "resolved", None) and getattr(ref.resolved, "author", None):
+                    target_bot_msg.last_user_id = ref.resolved.author.id
+                elif all_channel_messages:
+                    try:
+                        idx = all_channel_messages.index(target_bot_msg)
+                        for older_msg in all_channel_messages[idx + 1:]:
+                            if getattr(older_msg, "author", None) and older_msg.author.id != bot.user.id:
+                                target_bot_msg.last_user_id = older_msg.author.id
+                                break
+                    except ValueError:
+                        pass
+
             game.recover_from_history(bot_messages)
             synced_channels.add(channel.id)
             logger.info(
-                "Synced [%s] #%s from chat: Current CP: %s, Next expected CP: %s",
+                "Synced [%s] #%s from chat: Current CP: %s, Last counter: %s, Next expected CP: %s",
                 guild_name,
                 channel.name,
                 game.current_cp,
+                game.last_user_id,
                 game.next_expected_cp
             )
     except Exception as e:
@@ -532,6 +566,30 @@ async def on_message(message: discord.Message):
         game.next_expected_cp
     )
 
+    # Check if incoming message is in reply to their own message or the bot's confirmation of their count
+    if getattr(message, "reference", None):
+        ref_msg = getattr(message.reference, "resolved", None)
+        if not ref_msg and getattr(message.reference, "message_id", None):
+            try:
+                ref_msg = await message.channel.fetch_message(message.reference.message_id)
+                message.reference.resolved = ref_msg
+            except Exception:
+                pass
+        if ref_msg:
+            if getattr(ref_msg, "author", None) and ref_msg.author.id == message.author.id:
+                game.last_user_id = message.author.id
+            elif getattr(ref_msg, "author", None) and ref_msg.author.id == bot.user.id:
+                sub_ref = getattr(ref_msg, "reference", None)
+                if sub_ref:
+                    sub_resolved = getattr(sub_ref, "resolved", None)
+                    if not sub_resolved and getattr(sub_ref, "message_id", None):
+                        try:
+                            sub_resolved = await message.channel.fetch_message(sub_ref.message_id)
+                        except Exception:
+                            pass
+                    if sub_resolved and getattr(sub_resolved, "author", None) and sub_resolved.author.id == message.author.id:
+                        game.last_user_id = message.author.id
+
     previous_cp = game.current_cp
     previous_last_user_id = game.last_user_id
     is_correct, response_text = game.process_count(message.author.id, extracted_cp)
@@ -805,7 +863,7 @@ async def cmd_rules(interaction: discord.Interaction):
     )
     embed.add_field(
         name="4️⃣ Take Turns",
-        value="Please take turns! Counting twice in a row will be disabled in the future.",
+        value=f"You cannot count twice in a row! Double counting breaks the chain and resets the game back to `{STARTING_CP}` (`❌`).",
         inline=False
     )
     embed.add_field(
