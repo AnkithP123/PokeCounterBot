@@ -91,6 +91,16 @@ class TestClassifier(unittest.TestCase):
         self.assertEqual(res["hp"], 234)
         self.assertEqual(res["candy_family"], "TEDDIURSA")
 
+    def test_charmander_classification(self):
+        """Verify that Charmander (CP 38, 20 HP) from a tall 20:9 screenshot correctly resolves to CP 38."""
+        img_charmander = os.path.join(SAMPLES_DIR, "cp38_charmander.png")
+        res = classify_pokemon_from_image(img_charmander)
+        self.assertEqual(res["species"], "Charmander")
+        self.assertEqual(res["cp"], 38)
+        self.assertEqual(res["hp"], 20)
+        self.assertEqual(res["candy_family"], "CHARMANDER")
+        self.assertEqual(res["stat_status"], "VALID")
+
 
 if __name__ == "__main__":
     unittest.main()

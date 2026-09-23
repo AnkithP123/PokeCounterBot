@@ -133,8 +133,8 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
         (int(h * 0.048), int(h * 0.098), int(w * 0.20), int(w * 0.80)),
         (int(h * 0.040), int(h * 0.120), int(w * 0.20), int(w * 0.80)),
         (int(h * 0.012), int(h * 0.085), int(w * 0.18), int(w * 0.82)),
-        (int(h * 0.030), int(h * 0.130), int(w * 0.18), int(w * 0.82)),
-        (int(h * 0.070), int(h * 0.155), int(w * 0.18), int(w * 0.82))
+        (int(h * 0.070), int(h * 0.155), int(w * 0.18), int(w * 0.82)),
+        (int(h * 0.030), int(h * 0.155), int(w * 0.18), int(w * 0.82)),
     ]
 
     whitelist = "CPcp0123456789 \n"
@@ -173,9 +173,13 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
                                 crop_prefixed.append(v)
                                 all_prefixed.append(v)
 
-            # Early exit: if we have consistent prefixed candidate agreement, break early
-            if len(crop_prefixed) >= 2 and Counter(crop_prefixed).most_common(1)[0][1] >= 2:
-                break
+            # Early exit: if we have decisive prefixed candidate agreement, break early
+            if len(crop_prefixed) >= 3:
+                most = Counter(crop_prefixed).most_common(2)
+                if len(most) == 1 and most[0][1] >= 3:
+                    break
+                if len(most) >= 2 and most[0][1] >= 3 and most[0][1] > most[1][1]:
+                    break
 
         if crop_prefixed:
             counts = Counter(crop_prefixed)
