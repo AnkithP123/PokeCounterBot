@@ -101,6 +101,16 @@ class TestClassifier(unittest.TestCase):
         self.assertEqual(res["candy_family"], "CHARMANDER")
         self.assertEqual(res["stat_status"], "VALID")
 
+    def test_pikachu_91_classification(self):
+        """Verify that Flying Pikachu (CP 91, 30 HP) correctly resolves to CP 91."""
+        img_pika = os.path.join(SAMPLES_DIR, "cp91_flying_pikachu.png")
+        res = classify_pokemon_from_image(img_pika)
+        self.assertEqual(res["species"], "Pikachu")
+        self.assertEqual(res["cp"], 91)
+        self.assertEqual(res["hp"], 30)
+        self.assertEqual(res["candy_family"], "PIKACHU")
+        self.assertEqual(res["stat_status"], "VALID")
+
 
 if __name__ == "__main__":
     unittest.main()
