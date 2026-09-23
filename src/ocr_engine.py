@@ -24,20 +24,23 @@ try:
         "/opt/homebrew/share/tessdata",
         "/usr/local/share/tessdata",
         "/usr/share/tesseract-ocr/5/tessdata",
-        "/usr/share/tesseract-ocr/4.00/tessdata",
+        "/usr/share/tesseract-ocr/5",
         "/usr/share/tessdata",
+        "/usr/share",
         LOCAL_TESSDATA,
     ]
     for p in tessdata_candidates:
-        if p and os.path.exists(os.path.join(p, "eng.traineddata")):
-            _TESSDATA_PATH = p
-            break
+        if p and os.path.exists(p):
+            try:
+                with tesserocr.PyTessBaseAPI(path=p) as test_api:
+                    _TESSDATA_PATH = p
+                    _HAS_TESSEROCR = True
+                    logger.info("Using tesserocr with tessdata path: %s", _TESSDATA_PATH)
+                    break
+            except Exception:
+                continue
 
-    if _TESSDATA_PATH:
-        with tesserocr.PyTessBaseAPI(path=_TESSDATA_PATH) as test_api:
-            _HAS_TESSEROCR = True
-            logger.info("Using tesserocr with tessdata path: %s", _TESSDATA_PATH)
-    else:
+    if not _HAS_TESSEROCR:
         try:
             with tesserocr.PyTessBaseAPI() as test_api:
                 _HAS_TESSEROCR = True
@@ -46,7 +49,7 @@ try:
         except Exception:
             _HAS_TESSEROCR = False
 except Exception as e:
-    logger.debug("tesserocr not available (%s), falling back to pytesseract", e)
+    logger.warning("tesserocr not available (%s), falling back to pytesseract", e)
     _HAS_TESSEROCR = False
 
 import pytesseract

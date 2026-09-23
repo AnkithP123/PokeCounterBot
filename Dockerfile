@@ -28,10 +28,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy source code and test samples
 COPY . .
 
-# Ensure custom traineddata is available in system tessdata paths
+# Ensure custom traineddata is available in system tessdata paths without overwriting system eng.traineddata
 RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata /usr/share/tessdata && \
-    cp -r tessdata/* /usr/share/tesseract-ocr/5/tessdata/ 2>/dev/null || true && \
-    cp -r tessdata/* /usr/share/tessdata/ 2>/dev/null || true
+    cp tessdata/number.traineddata /usr/share/tesseract-ocr/5/tessdata/ 2>/dev/null || true && \
+    cp tessdata/number.traineddata /usr/share/tessdata/ 2>/dev/null || true
 
 # Run as non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
