@@ -497,7 +497,9 @@ async def on_message(message: discord.Message):
     try:
         async with message.channel.typing():
             image_bytes = await attachment.read()
-            extracted_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
+            raw_cp = await asyncio.to_thread(extract_cp_from_image, image_bytes)
+            class_res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes, known_cp=raw_cp)
+            extracted_cp = class_res.get("cp") or raw_cp
     except Exception as e:
         logger.error("Error reading image attachment: %s", e)
         return
@@ -517,8 +519,9 @@ async def on_message(message: discord.Message):
         return
 
     logger.info(
-        "Detected CP: %d from %s in [%s] #%s (Expected: %d)",
+        "Detected CP: %d (raw: %s) from %s in [%s] #%s (Expected: %d)",
         extracted_cp,
+        raw_cp,
         message.author.name,
         message.guild.name if message.guild else "",
         message.channel.name,
@@ -549,16 +552,15 @@ async def on_message(message: discord.Message):
         initial_text = f"{particle} CP {cp_disp} ✅{tada}{consecutive_warning}"
         reply_msg = await message.reply(initial_text, mention_author=False)
 
-        # Classify species asynchronously in background and update the message
+        # Update message with species information
         async def update_with_species():
             try:
-                async with message.channel.typing():
-                    res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes, known_cp=extracted_cp)
-                    species = res.get("species")
-                    final_cp = extracted_cp
-                    stat_status = res.get("stat_status", "VALID")
-                    detected_hp = res.get("hp")
-                    family_display = res.get("family_display") or species or "This Pokémon"
+                res = class_res
+                species = res.get("species")
+                final_cp = extracted_cp
+                stat_status = res.get("stat_status", "VALID")
+                detected_hp = res.get("hp")
+                family_display = res.get("family_display") or species or "This Pokémon"
             except Exception as ex:
                 logger.error("Error classifying species on count: %s", ex)
                 species = None

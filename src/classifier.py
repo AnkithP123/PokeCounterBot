@@ -76,6 +76,39 @@ def is_stat_combination_possible(species: Dict[str, Any], target_cp: int, target
     return False
 
 
+def repair_stat_hallucination(family_members: List[Dict[str, Any]], cp: Optional[int], hp: Optional[int]) -> Tuple[Optional[int], List[str]]:
+    """
+    If cp with hp produces 0 valid species, checks if cp has an OCR prefix hallucination
+    (e.g. '190' for Feebas 90, '1082' for Jangmo-o 82) where stripping leading digit(s)
+    produces a mathematically valid match for the Pokémon's candy family and HP.
+    """
+    if not cp or not hp:
+        return cp, []
+    valid = [
+        m["name"] for m in family_members
+        if is_stat_combination_possible(m, cp, hp)
+    ]
+    if valid:
+        return cp, valid
+
+    s_cp = str(cp)
+    for i in range(1, len(s_cp)):
+        sub_str = s_cp[i:].lstrip("0")
+        if not sub_str:
+            continue
+        sub_cp = int(sub_str)
+        if 10 <= sub_cp <= 6000:
+            sub_matches = [
+                m["name"] for m in family_members
+                if is_stat_combination_possible(m, sub_cp, hp)
+            ]
+            if sub_matches:
+                logger.info("Auto-corrected OCR hallucinated prefix CP %d -> %d with HP %d for %s",
+                            cp, sub_cp, hp, [m["name"] for m in sub_matches])
+                return sub_cp, sub_matches
+    return cp, []
+
+
 def extract_hp_from_image(img: np.ndarray) -> Optional[int]:
     """
     Extracts the Pokémon HP value from the 'XX/XX HP' text under the name or appraisal card.
@@ -682,11 +715,9 @@ def _classify_pokemon_core(img: np.ndarray, cp: Optional[int]) -> Dict[str, Any]
             result["explanation"] = f"Found {candy} Candy, missing CP/HP; identified as {winner} via visual classifier."
             return result
 
-        # Triangulate using CP and HP
-        valid_species = [
-            m["name"] for m in family_members
-            if is_stat_combination_possible(m, cp, hp)
-        ]
+        # Triangulate using CP and HP (auto-correcting prefix OCR hallucinations if needed)
+        cp, valid_species = repair_stat_hallucination(family_members, cp, hp)
+        result["cp"] = cp
 
         family_display = " / ".join([m["name"] for m in family_members])
         result["family_display"] = family_display
@@ -775,8 +806,14 @@ def _classify_pokemon_core(img: np.ndarray, cp: Optional[int]) -> Dict[str, Any]
     if primary_name:
         result["species"] = primary_name
         result["candidates"] = [primary_name]
-        result["candy_family"] = SPECIES_TO_FAMILY.get(primary_name.lower())
-        result["hp"] = extract_hp_from_image(img)
+        fam_key = SPECIES_TO_FAMILY.get(primary_name.lower())
+        result["candy_family"] = fam_key
+        hp = extract_hp_from_image(img)
+        result["hp"] = hp
+        if fam_key and fam_key in FAMILIES and cp and hp:
+            repaired_cp, _ = repair_stat_hallucination(FAMILIES[fam_key], cp, hp)
+            if repaired_cp:
+                result["cp"] = repaired_cp
         result["explanation"] = f"Identified as {primary_name} from species name OCR."
         return result
 

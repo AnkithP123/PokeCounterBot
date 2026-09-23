@@ -3,12 +3,17 @@ FROM python:3.11-slim
 # Prevent Python from writing pyc files and buffering stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/5/tessdata
 
-# Install Tesseract OCR and OpenCV dependencies
+# Install Tesseract OCR, Leptonica dev headers, and OpenCV dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
     tesseract-ocr \
     tesseract-ocr-eng \
+    libtesseract-dev \
+    libleptonica-dev \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
