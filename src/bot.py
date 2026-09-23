@@ -3,6 +3,7 @@ import sys
 import io
 import time
 import re
+import json
 import asyncio
 import logging
 from typing import Optional, Dict, Set, Any, Tuple
@@ -93,9 +94,10 @@ async def sync_game_state_from_channel(
     guild_name = channel.guild.name if channel.guild else "Unknown"
     all_channel_messages = []
     bot_messages = []
+    detected_last_user_id: Optional[int] = None
     try:
         if hasattr(channel, "history"):
-            history_kwargs: Dict[str, Any] = {"limit": 100}
+            history_kwargs: Dict[str, Any] = {"limit": 1000}
             if before_message is not None:
                 history_kwargs["before"] = before_message
 
@@ -105,7 +107,12 @@ async def sync_game_state_from_channel(
                     all_channel_messages.append(msg)
                     if getattr(msg, "author", None) and msg.author.id == bot.user.id:
                         content = getattr(msg, "content", "")
-                        if "❓" in content or "Impossible Pokémon" in content or "mathematically impossible" in content:
+                        if not content or "❓" in content or "Impossible Pokémon" in content or "mathematically impossible" in content:
+                            continue
+
+                        parsed = game.parse_last_bot_message(content)
+                        is_reset = "❌" in content
+                        if parsed is None and not is_reset:
                             continue
 
                         # Check if this confirmation message was in reply to anyone
@@ -118,29 +125,29 @@ async def sync_game_state_from_channel(
                                     except Exception as fetch_err:
                                         logger.debug("Could not fetch referenced message %s: %s", ref.message_id, fetch_err)
 
+                            if getattr(ref, "resolved", None) and getattr(ref.resolved, "author", None):
+                                detected_last_user_id = ref.resolved.author.id
+
                         bot_messages.append(msg)
-                        parsed = game.parse_last_bot_message(content)
-                        if parsed is not None or "❌" in content:
-                            break
+                        break
 
         if bot_messages:
             target_bot_msg = bot_messages[0]
             # Fallback if reply reference was not present: find older non-bot message in history
-            if not getattr(target_bot_msg, "last_user_id", None):
-                ref = getattr(target_bot_msg, "reference", None)
-                if ref and getattr(ref, "resolved", None) and getattr(ref.resolved, "author", None):
-                    target_bot_msg.last_user_id = ref.resolved.author.id
-                elif all_channel_messages:
-                    try:
-                        idx = all_channel_messages.index(target_bot_msg)
-                        for older_msg in all_channel_messages[idx + 1:]:
-                            if getattr(older_msg, "author", None) and older_msg.author.id != bot.user.id:
-                                target_bot_msg.last_user_id = older_msg.author.id
-                                break
-                    except ValueError:
-                        pass
+            if detected_last_user_id is None and all_channel_messages:
+                try:
+                    idx = all_channel_messages.index(target_bot_msg)
+                    for older_msg in all_channel_messages[idx + 1:]:
+                        if getattr(older_msg, "author", None) and older_msg.author.id != bot.user.id:
+                            detected_last_user_id = older_msg.author.id
+                            break
+                except ValueError:
+                    pass
 
             game.recover_from_history(bot_messages)
+            if detected_last_user_id is not None:
+                game.last_user_id = detected_last_user_id
+
             synced_channels.add(channel.id)
             logger.info(
                 "Synced [%s] #%s from chat: Current CP: %s, Last counter: %s, Next expected CP: %s",
@@ -150,6 +157,9 @@ async def sync_game_state_from_channel(
                 game.last_user_id,
                 game.next_expected_cp
             )
+        else:
+            # If no count/reset was found in history, mark as synced and keep existing state
+            synced_channels.add(channel.id)
     except Exception as e:
         logger.error("Failed to read channel history for [%s] #%s: %s", guild_name, channel.name, e)
 

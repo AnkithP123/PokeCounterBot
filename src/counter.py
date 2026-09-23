@@ -64,9 +64,6 @@ class PokeCounterGame:
         Recovers the current game state from a list of past messages sent by the bot
         (ordered latest first).
         """
-        self.current_cp = None
-        self.last_user_id = None
-
         for msg in bot_messages:
             # We check the content of the bot's messages
             content = getattr(msg, "content", str(msg))
@@ -101,8 +98,10 @@ class PokeCounterGame:
                 self.last_user_id = None
                 return
 
-        # If no relevant bot messages found, count starts at starting_cp
-        self.current_cp = None
+        # If no decisive messages found in this history batch, do not wipe an existing count!
+        if self.current_cp is None:
+            self.current_cp = None
+            self.last_user_id = None
 
     def process_count(self, user_id: int, extracted_cp: int) -> Tuple[bool, str]:
         """
