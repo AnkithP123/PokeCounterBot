@@ -104,7 +104,7 @@ def repair_stat_hallucination(family_members: List[Dict[str, Any]], cp: Optional
             ]
             if sub_matches:
                 logger.info("Auto-corrected OCR hallucinated prefix CP %d -> %d with HP %d for %s",
-                            cp, sub_cp, hp, [m["name"] for m in sub_matches])
+                            cp, sub_cp, hp, sub_matches)
                 return sub_cp, sub_matches
     return cp, []
 

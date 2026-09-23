@@ -501,7 +501,7 @@ async def on_message(message: discord.Message):
             class_res = await asyncio.to_thread(classify_pokemon_from_image, image_bytes, known_cp=raw_cp)
             extracted_cp = class_res.get("cp") or raw_cp
     except Exception as e:
-        logger.error("Error reading image attachment: %s", e)
+        logger.exception("Error reading image attachment: %s", e)
         return
 
     if extracted_cp is None:
