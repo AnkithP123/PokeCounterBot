@@ -111,6 +111,16 @@ class TestClassifier(unittest.TestCase):
         self.assertEqual(res["candy_family"], "PIKACHU")
         self.assertEqual(res["stat_status"], "VALID")
 
+    def test_lapras_109_classification(self):
+        """Verify that Lapras (CP 109, 46 HP) resolves to Lapras and LAPRAS candy family (not PARAS)."""
+        img_lapras = os.path.join(SAMPLES_DIR, "cp109_lapras.png")
+        res = classify_pokemon_from_image(img_lapras)
+        self.assertEqual(res["species"], "Lapras")
+        self.assertEqual(res["cp"], 109)
+        self.assertEqual(res["hp"], 46)
+        self.assertEqual(res["candy_family"], "LAPRAS")
+        self.assertEqual(res["stat_status"], "VALID")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,14 +3,14 @@ import re
 import math
 import json
 import logging
-from typing import Optional, Dict, Any, List, Union, Tuple
+from typing import Optional, Dict, Any, List, Union, Tuple, Set
 import io
 from PIL import Image
 
 import cv2
 import numpy as np
 import pytesseract
-from difflib import get_close_matches
+from difflib import get_close_matches, SequenceMatcher
 
 from src.ocr import extract_cp_from_image, _load_image
 from src.ocr_engine import run_fast_ocr
@@ -375,6 +375,37 @@ def disambiguate_candidates_with_vision(img: np.ndarray, candidates: List[str]) 
         return candidates[0]
 
 
+def _select_best_candy_family(matches: List[str], ignored_words: Set[str]) -> Optional[str]:
+    """
+    Selects the best matching evolutionary family name from regex matches.
+    Prioritizes exact matches in FAMILIES, followed by highest-scoring close matches.
+    """
+    if not matches:
+        return None
+
+    # Pass 1: Prioritize exact matches (e.g. LAPRAS in ['PRAS', 'LAPRAS'])
+    for cand in matches:
+        w_u = cand.upper()
+        if w_u not in ignored_words and w_u in FAMILIES:
+            return w_u
+
+    # Pass 2: Score fuzzy matches by similarity ratio
+    scored: List[Tuple[float, str]] = []
+    for cand in matches:
+        w_u = cand.upper()
+        if w_u not in ignored_words and len(w_u) >= 3:
+            closest = get_close_matches(w_u, FAMILIES.keys(), n=3, cutoff=0.7)
+            for m in closest:
+                ratio = SequenceMatcher(None, w_u, m).ratio()
+                scored.append((ratio, m))
+
+    if scored:
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[0][1]
+
+    return None
+
+
 def extract_candy_name_from_image(img: np.ndarray) -> Optional[str]:
     """
     Extracts the Pokémon evolutionary family name from the 'XXXX CANDY' line.
@@ -386,8 +417,8 @@ def extract_candy_name_from_image(img: np.ndarray) -> Optional[str]:
         "THE", "AND", "FOR", "NEW", "ATTACK", "EVOLVE", "WEIGHT", "HEIGHT"
     }
 
-    # Fast path: Poke Genie tight Candy crop (y: ~0.70-0.84, x: ~0.45-0.98)
-    tight_crop = img[int(h * 0.70):int(h * 0.84), int(w * 0.45):int(w * 0.98)]
+    # Fast path: Candy crop (y: ~0.70-0.84, x: ~0.28-0.98 to include 3-column layouts)
+    tight_crop = img[int(h * 0.70):int(h * 0.84), int(w * 0.28):int(w * 0.98)]
     if tight_crop.size > 0:
         gray_tight = cv2.cvtColor(tight_crop, cv2.COLOR_BGR2GRAY)
         for th in (0, 210):
@@ -398,12 +429,9 @@ def extract_candy_name_from_image(img: np.ndarray) -> Optional[str]:
                 txt,
                 re.IGNORECASE
             )
-            for cand in matches:
-                w_u = cand.upper()
-                if w_u not in ignored_words:
-                    closest = get_close_matches(w_u, FAMILIES.keys(), n=1, cutoff=0.7)
-                    if closest:
-                        return closest[0]
+            best = _select_best_candy_family(matches, ignored_words)
+            if best:
+                return best
 
     # Fallback to wider region if tight crop misses (e.g. non-standard aspect ratios)
     lower_crop = img[int(h * 0.55):int(h * 0.85), :]
@@ -417,12 +445,9 @@ def extract_candy_name_from_image(img: np.ndarray) -> Optional[str]:
             txt,
             re.IGNORECASE
         )
-        for cand in matches:
-            w_u = cand.upper()
-            if w_u not in ignored_words:
-                closest = get_close_matches(w_u, FAMILIES.keys(), n=1, cutoff=0.7)
-                if closest:
-                    return closest[0]
+        best = _select_best_candy_family(matches, ignored_words)
+        if best:
+            return best
 
     return None
 
@@ -724,13 +749,31 @@ def _classify_pokemon_core(img: np.ndarray, cp: Optional[int]) -> Dict[str, Any]
 
         # If triangulation produced 0 matches, the stat combination is impossible for the entire family!
         if not valid_species and cp and hp:
+            # Check if name or caught text indicates another species whose stats ARE valid
+            # (protects against rare candy OCR misreads/hallucinations)
+            primary_name = extract_primary_name_from_image(img)
+            caught_species = extract_caught_header_species(img)
+            alt_candidate = None
+            for alt in (primary_name, caught_species):
+                if alt and alt in ALL_SPECIES:
+                    alt_valid, _, alt_name = check_hp_validity_for_candidate(alt, cp, hp)
+                    if alt_valid:
+                        alt_candidate = alt_name
+                        break
+            if alt_candidate:
+                alt_fam = SPECIES_TO_FAMILY.get(alt_candidate.lower())
+                result["species"] = alt_candidate
+                result["candy_family"] = alt_fam
+                result["candidates"] = [alt_candidate]
+                result["stat_status"] = "VALID"
+                result["explanation"] = f"Identified as {alt_candidate} (validated via name/caught OCR + stats)."
+                return result
+
             result["stat_status"] = "IMPOSSIBLE"
             result["stat_error_reason"] = f"{family_display} cannot have CP {cp} with HP {hp} in Pokémon GO."
-            primary_name = extract_primary_name_from_image(img)
             if primary_name and primary_name in names:
                 result["species"] = primary_name
             else:
-                caught_species = extract_caught_header_species(img)
                 if caught_species and caught_species in names:
                     result["species"] = caught_species
                 else:
