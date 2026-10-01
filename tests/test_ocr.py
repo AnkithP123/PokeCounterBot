@@ -23,6 +23,7 @@ IMG_JANGMO_O_PATH = os.path.join(SAMPLES_DIR, "cp82_jangmo_o.png")
 IMG_FEEBAS_PATH = os.path.join(SAMPLES_DIR, "cp90_feebas_shadow.png")
 IMG_PIKACHU_91_PATH = os.path.join(SAMPLES_DIR, "cp91_flying_pikachu.png")
 IMG_LAPRAS_109_PATH = os.path.join(SAMPLES_DIR, "cp109_lapras.png")
+IMG_LECHONK_131_PATH = os.path.join(SAMPLES_DIR, "cp131_lechonk.jpg")
 
 
 class TestOCR(unittest.TestCase):
@@ -97,6 +98,10 @@ class TestOCR(unittest.TestCase):
     def test_extract_cp_lapras_109(self):
         """Verify that Lapras screenshot resolves to CP 109."""
         self.assertEqual(extract_cp_from_image(IMG_LAPRAS_109_PATH), 109)
+
+    def test_extract_cp_lechonk_131(self):
+        """Verify that Lechonk screenshot with halo background resolves to CP 131 instead of 13."""
+        self.assertEqual(extract_cp_from_image(IMG_LECHONK_131_PATH), 131)
 
 
 

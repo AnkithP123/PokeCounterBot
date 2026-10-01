@@ -121,6 +121,16 @@ class TestClassifier(unittest.TestCase):
         self.assertEqual(res["candy_family"], "LAPRAS")
         self.assertEqual(res["stat_status"], "VALID")
 
+    def test_lechonk_131_classification(self):
+        """Verify that Lechonk (CP 131, 55 HP) resolves to Lechonk CP 131 and not CP 13."""
+        img_lechonk = os.path.join(SAMPLES_DIR, "cp131_lechonk.jpg")
+        res = classify_pokemon_from_image(img_lechonk)
+        self.assertEqual(res["species"], "Lechonk")
+        self.assertEqual(res["cp"], 131)
+        self.assertEqual(res["hp"], 55)
+        self.assertEqual(res["candy_family"], "LECHONK")
+        self.assertEqual(res["stat_status"], "VALID")
+
 
 if __name__ == "__main__":
     unittest.main()

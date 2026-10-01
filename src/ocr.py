@@ -142,18 +142,26 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
     whitelist = "CPcp0123456789 \n"
 
     # Fast Path (Poké Genie style): tight standard crop with pure white min_bgr thresholds
-    # Resolves ~90% of standard screenshots in 1-2 calls (<15ms)
+    # Resolves ~90% of standard screenshots in ~10-15ms with high accuracy
     c0 = img[crops[0][0]:crops[0][1], crops[0][2]:crops[0][3]]
     if c0.size > 0:
         min_bgr0 = np.minimum(c0[:, :, 0], np.minimum(c0[:, :, 1], c0[:, :, 2]))
         s0 = cv2.resize(min_bgr0, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
+        fast_votes: List[int] = []
         for th in (230, 240):
             _, b0 = cv2.threshold(s0, th, 255, cv2.THRESH_BINARY_INV)
             bord0 = cv2.copyMakeBorder(b0, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-            t0 = run_fast_ocr(bord0, psm=7, whitelist=whitelist)
-            cands0 = [c[1] for c in _parse_all_candidates(t0) if c[0]]
-            if cands0:
-                return cands0[0]
+            for lang in ("number", "eng"):
+                t0 = run_fast_ocr(bord0, psm=7, whitelist=whitelist, lang=lang)
+                cands0 = [c[1] for c in _parse_all_candidates(t0) if c[0]]
+                fast_votes.extend(cands0)
+
+        if fast_votes:
+            most = Counter(fast_votes).most_common(2)
+            if most[0][1] >= 2 and (len(most) == 1 or most[0][1] > most[1][1]):
+                return most[0][0]
+            if len(fast_votes) == 1:
+                return fast_votes[0]
 
     # Pass 1: Prioritize explicit CP-prefixed matches across crops & channels
     all_prefixed: List[int] = []
