@@ -145,7 +145,7 @@ async def sync_game_state_from_channel(
                     pass
 
             game.recover_from_history(bot_messages)
-            if detected_last_user_id is not None:
+            if game.current_cp is not None and detected_last_user_id is not None:
                 game.last_user_id = detected_last_user_id
 
             synced_channels.add(channel.id)

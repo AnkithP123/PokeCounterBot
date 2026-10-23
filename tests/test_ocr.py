@@ -103,6 +103,17 @@ class TestOCR(unittest.TestCase):
         """Verify that Lechonk screenshot with halo background resolves to CP 131 instead of 13."""
         self.assertEqual(extract_cp_from_image(IMG_LECHONK_131_PATH), 131)
 
+    def test_extract_cp_eevee_71_shiny_sparkle(self):
+        """Verify that Shiny Eevee with sparkle dot after CP 71 resolves to CP 71, not 710."""
+        img_path = os.path.join(SAMPLES_DIR, "cp71_eevee_shiny_sparkle.png")
+        self.assertEqual(extract_cp_from_image(img_path), 71)
+
+    def test_extract_cp_flabebe_79_fairy_particle(self):
+        """Verify that Flabébé with fairy particle dot after CP 79 resolves to CP 79, not 794."""
+        img_path = os.path.join(SAMPLES_DIR, "cp79_flabebe_fairy_particle.png")
+        self.assertEqual(extract_cp_from_image(img_path), 79)
+
+
 
 
 
