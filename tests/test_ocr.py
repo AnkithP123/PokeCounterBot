@@ -113,6 +113,11 @@ class TestOCR(unittest.TestCase):
         img_path = os.path.join(SAMPLES_DIR, "cp79_flabebe_fairy_particle.png")
         self.assertEqual(extract_cp_from_image(img_path), 79)
 
+    def test_extract_cp_jangmo_o_82_glare(self):
+        """Verify that Jangmo-o with yellow autumn background glare resolves to CP 82 instead of 62."""
+        img_path = os.path.join(SAMPLES_DIR, "cp82_jangmo_o_fail_glare.png")
+        self.assertEqual(extract_cp_from_image(img_path), 82)
+
 
 
 
