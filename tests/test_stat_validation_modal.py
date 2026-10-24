@@ -177,3 +177,9 @@ async def test_enter_hp_modal_still_impossible_submission():
     assert game.current_cp == 67
 
 
+def test_enable_stat_validation_flag_default():
+    import src.bot as bot_module
+    # Flag should default to False
+    assert bot_module.ENABLE_STAT_VALIDATION is False
+
+

@@ -33,6 +33,7 @@ TARGET_CHANNEL_ID_STR = os.getenv("CHANNEL_ID")
 TARGET_CHANNEL_ID: Optional[int] = int(TARGET_CHANNEL_ID_STR) if TARGET_CHANNEL_ID_STR else None
 STARTING_CP = int(os.getenv("STARTING_CP", "10"))
 ALLOW_CONSECUTIVE = os.getenv("ALLOW_CONSECUTIVE_COUNTS", "false").lower() in ("1", "true", "yes")
+ENABLE_STAT_VALIDATION = os.getenv("ENABLE_STAT_VALIDATION", "false").lower() in ("1", "true", "yes")
 
 class PokeCounterClient(commands.Bot):
     def __init__(self):
@@ -642,65 +643,71 @@ async def on_message(message: discord.Message):
                 family_display = "Unknown Species"
 
             if stat_status == "IMPOSSIBLE":
-                # Impossible Pokémon NEVER resets the count and does not advance it
-                cur_game = get_game_for_channel(message.channel.id)
-                if cur_game.current_cp == extracted_cp:
-                    cur_game.current_cp = previous_cp
-                    cur_game.last_user_id = previous_last_user_id
+                if ENABLE_STAT_VALIDATION:
+                    # Impossible Pokémon NEVER resets the count and does not advance it
+                    cur_game = get_game_for_channel(message.channel.id)
+                    if cur_game.current_cp == extracted_cp:
+                        cur_game.current_cp = previous_cp
+                        cur_game.last_user_id = previous_last_user_id
 
-                # Change checkmark reaction to raised eyebrow emoji
-                try:
-                    await message.remove_reaction("✅", bot.user)
-                except Exception as ex:
-                    logger.warning("Could not remove checkmark reaction: %s", ex)
-                try:
-                    await message.add_reaction("🤨")
-                except Exception as ex:
-                    logger.warning("Could not add raised eyebrow reaction: %s", ex)
+                    # Change checkmark reaction to raised eyebrow emoji
+                    try:
+                        await message.remove_reaction("✅", bot.user)
+                    except Exception as ex:
+                        logger.warning("Could not remove checkmark reaction: %s", ex)
+                    try:
+                        await message.add_reaction("🤨")
+                    except Exception as ex:
+                        logger.warning("Could not add raised eyebrow reaction: %s", ex)
 
-                # Edit initial message:
-                # Warning sign at beginning, says it's impossible saying to upload unedited,
-                # at end lets them know the number is still that number
-                warning_text = (
-                    f"⚠️ Impossible Pokémon: CP {extracted_cp} with HP {detected_hp} is mathematically impossible for {family_display}. "
-                    f"Please upload an unedited screenshot. "
-                    f"Next expected CP is still {extracted_cp}."
-                )
-                try:
-                    await reply_msg.edit(content=warning_text, view=None)
-                except Exception as edit_err:
-                    logger.warning("Could not edit initial count message with warning: %s", edit_err)
-
-                # Reply to that message with button to enter correct HP
-                view = StatCorrectionView(
-                    bot=bot,
-                    target_message=message,
-                    reply_msg=reply_msg,
-                    channel_id=message.channel.id,
-                    user_id=message.author.id,
-                    extracted_cp=extracted_cp,
-                    detected_hp=detected_hp,
-                    family_display=family_display,
-                    consecutive_warning=consecutive_warning,
-                    previous_cp=previous_cp,
-                    previous_last_user_id=previous_last_user_id
-                )
-                active_stat_corrections[message.channel.id] = view
-
-                correction_text = (
-                    f"{message.author.mention} If the HP in your screenshot was misread, "
-                    f"click below to enter the correct HP from your screenshot:"
-                )
-                try:
-                    correction_msg = await reply_msg.reply(
-                        correction_text,
-                        view=view,
-                        mention_author=True
+                    # Edit initial message:
+                    # Warning sign at beginning, says it's impossible saying to upload unedited,
+                    # at end lets them know the number is still that number
+                    warning_text = (
+                        f"⚠️ Impossible Pokémon: CP {extracted_cp} with HP {detected_hp} is mathematically impossible for {family_display}. "
+                        f"Please upload an unedited screenshot. "
+                        f"Next expected CP is still {extracted_cp}."
                     )
-                    view.correction_msg = correction_msg
-                except Exception as reply_err:
-                    logger.warning("Could not send correction reply: %s", reply_err)
-                return
+                    try:
+                        await reply_msg.edit(content=warning_text, view=None)
+                    except Exception as edit_err:
+                        logger.warning("Could not edit initial count message with warning: %s", edit_err)
+
+                    # Reply to that message with button to enter correct HP
+                    view = StatCorrectionView(
+                        bot=bot,
+                        target_message=message,
+                        reply_msg=reply_msg,
+                        channel_id=message.channel.id,
+                        user_id=message.author.id,
+                        extracted_cp=extracted_cp,
+                        detected_hp=detected_hp,
+                        family_display=family_display,
+                        consecutive_warning=consecutive_warning,
+                        previous_cp=previous_cp,
+                        previous_last_user_id=previous_last_user_id
+                    )
+                    active_stat_corrections[message.channel.id] = view
+
+                    correction_text = (
+                        f"{message.author.mention} If the HP in your screenshot was misread, "
+                        f"click below to enter the correct HP from your screenshot:"
+                    )
+                    try:
+                        correction_msg = await reply_msg.reply(
+                            correction_text,
+                            view=view,
+                            mention_author=True
+                        )
+                        view.correction_msg = correction_msg
+                    except Exception as reply_err:
+                        logger.warning("Could not send correction reply: %s", reply_err)
+                    return
+                else:
+                    logger.info(
+                        "Stat combination for %s (CP %d, HP %s) flagged as impossible, but ENABLE_STAT_VALIDATION is False. Proceeding with count.",
+                        family_display, extracted_cp, detected_hp
+                    )
 
             if species:
                 species_name = species

@@ -45,6 +45,7 @@ cp .env.example .env
 | `CHANNEL_ID` | *Optional* | Exact Discord Channel ID (takes precedence over name). |
 | `STARTING_CP` | `10` | The base number to count from when starting or resetting. |
 | `ALLOW_CONSECUTIVE_COUNTS` | `false` | Allow the same user to post multiple consecutive counts (default: false). |
+| `ENABLE_STAT_VALIDATION` | `false` | Mathematically validate CP/HP stat combinations and prompt for correction on impossible stats (default: false). |
 | `TESSERACT_CMD` | *Optional* | Custom path to the `tesseract` binary if not in `PATH`. |
 
 ---
