@@ -11567,10 +11567,46 @@
       "sta": 127
     },
     {
+      "name": "Pumpkaboo (Small)",
+      "atk": 113,
+      "def": 136,
+      "sta": 127
+    },
+    {
+      "name": "Pumpkaboo (Large)",
+      "atk": 119,
+      "def": 127,
+      "sta": 144
+    },
+    {
+      "name": "Pumpkaboo (Super Size)",
+      "atk": 125,
+      "def": 122,
+      "sta": 153
+    },
+    {
       "name": "Gourgeist",
       "atk": 171,
       "def": 219,
       "sta": 146
+    },
+    {
+      "name": "Gourgeist (Small)",
+      "atk": 165,
+      "def": 233,
+      "sta": 146
+    },
+    {
+      "name": "Gourgeist (Large)",
+      "atk": 177,
+      "def": 204,
+      "sta": 163
+    },
+    {
+      "name": "Gourgeist (Super Size)",
+      "atk": 182,
+      "def": 190,
+      "sta": 172
     }
   ],
   "GOURGEIST": [
@@ -11581,10 +11617,46 @@
       "sta": 127
     },
     {
+      "name": "Pumpkaboo (Small)",
+      "atk": 113,
+      "def": 136,
+      "sta": 127
+    },
+    {
+      "name": "Pumpkaboo (Large)",
+      "atk": 119,
+      "def": 127,
+      "sta": 144
+    },
+    {
+      "name": "Pumpkaboo (Super Size)",
+      "atk": 125,
+      "def": 122,
+      "sta": 153
+    },
+    {
       "name": "Gourgeist",
       "atk": 171,
       "def": 219,
       "sta": 146
+    },
+    {
+      "name": "Gourgeist (Small)",
+      "atk": 165,
+      "def": 233,
+      "sta": 146
+    },
+    {
+      "name": "Gourgeist (Large)",
+      "atk": 177,
+      "def": 204,
+      "sta": 163
+    },
+    {
+      "name": "Gourgeist (Super Size)",
+      "atk": 182,
+      "def": 190,
+      "sta": 172
     }
   ],
   "BERGMITE": [

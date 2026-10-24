@@ -28,6 +28,13 @@ def test_check_hp_validity_single_species():
     assert matched == "Pikachu"
 
 
+def test_check_hp_validity_pumpkaboo_super_size():
+    # CP 83 with HP 36 is valid for Pumpkaboo (Super Size)
+    is_valid, matched, family_disp = check_hp_validity_for_candidate("Pumpkaboo / Gourgeist", 83, 36)
+    assert is_valid
+    assert matched == "Pumpkaboo (Super Size)"
+
+
 def test_impossible_stat_classification_preserves_cp():
     img = cv2.imread("/tmp/bunnelby_prior.png")
     if img is None:

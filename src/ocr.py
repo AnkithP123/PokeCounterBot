@@ -158,8 +158,6 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
             most = Counter(fast_votes).most_common(2)
             if most[0][1] >= 2 and (len(most) == 1 or most[0][1] > most[1][1]):
                 return most[0][0]
-            if len(fast_votes) == 1:
-                return fast_votes[0]
 
     # Pass 1: Prioritize explicit CP-prefixed matches across crops & channels
     all_prefixed: List[int] = []

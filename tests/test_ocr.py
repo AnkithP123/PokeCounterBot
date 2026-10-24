@@ -118,6 +118,11 @@ class TestOCR(unittest.TestCase):
         img_path = os.path.join(SAMPLES_DIR, "cp82_jangmo_o_fail_glare.png")
         self.assertEqual(extract_cp_from_image(img_path), 82)
 
+    def test_extract_cp_pumpkaboo_83_super_size(self):
+        """Verify that Super Size Pumpkaboo resolves to CP 83 instead of 63."""
+        img_path = os.path.join(SAMPLES_DIR, "cp83_pumpkaboo_super_size.png")
+        self.assertEqual(extract_cp_from_image(img_path), 83)
+
 
 
 
