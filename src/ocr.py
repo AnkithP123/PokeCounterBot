@@ -205,19 +205,11 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
             counts = Counter(crop_prefixed)
             if counts.most_common(1)[0][1] >= 2:
                 valid = [k for k, c in counts.items() if c >= 2]
-                for v in list(valid):
-                    for k in counts.keys():
-                        if len(str(k)) > len(str(v)) and str(k).startswith(str(v)) and set(str(k)[len(str(v)):]) == {"0"}:
-                            valid.append(k)
                 return sorted(valid, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
 
     if all_prefixed:
         counts = Counter(all_prefixed)
         valid = [k for k, c in counts.items() if c >= 2] or list(counts.keys())
-        for v in list(valid):
-            for k in counts.keys():
-                if len(str(k)) > len(str(v)) and str(k).startswith(str(v)) and set(str(k)[len(str(v)):]) == {"0"}:
-                    valid.append(k)
         return sorted(valid, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
 
     # Pass 1.5: Trained number model fallback (specialized for Pokemon GO CP font and glare)

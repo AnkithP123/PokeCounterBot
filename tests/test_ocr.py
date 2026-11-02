@@ -123,6 +123,11 @@ class TestOCR(unittest.TestCase):
         img_path = os.path.join(SAMPLES_DIR, "cp83_pumpkaboo_super_size.png")
         self.assertEqual(extract_cp_from_image(img_path), 83)
 
+    def test_extract_cp_flying_pikachu_11_balloon_strings(self):
+        """Verify that Flying Pikachu with balloon strings resolves to CP 11 instead of 110 or 10."""
+        img_path = os.path.join(SAMPLES_DIR, "cp11_flying_pikachu_balloon_strings.png")
+        self.assertEqual(extract_cp_from_image(img_path), 11)
+
 
 
 
