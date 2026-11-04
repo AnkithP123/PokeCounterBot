@@ -112,6 +112,28 @@ def _parse_cp_text(text: str) -> Optional[int]:
     return cands[0][1]
 
 
+def _rank_candidates(counts: Counter) -> int:
+    """
+    Ranks candidate CP numbers by consensus and length.
+    Filters out noisy prefix/suffix expansions (such as balloon strings or flame dots
+    turning 11 into 110) where the base number has strictly higher consensus.
+    """
+    valid = [k for k, c in counts.items() if c >= 2] or list(counts.keys())
+    filtered = []
+    for k in valid:
+        is_noisy_expansion = False
+        for other in valid:
+            if other != k and len(str(k)) > len(str(other)):
+                if str(k).startswith(str(other)) or str(k).endswith(str(other)):
+                    if counts[other] > counts[k]:
+                        is_noisy_expansion = True
+                        break
+        if not is_noisy_expansion:
+            filtered.append(k)
+    candidates_to_rank = filtered or valid
+    return sorted(candidates_to_rank, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
+
+
 def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image, np.ndarray]) -> Optional[int]:
     """
     Extracts the Pokémon CP value from a Pokémon GO screenshot.
@@ -172,7 +194,7 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
 
         crop_prefixed: List[int] = []
 
-        for th in [215, 220, 225, 230, 245]:
+        for th in [205, 215, 220, 225, 230, 245]:
             for chan in channels:
                 scaled = cv2.resize(chan, (0, 0), fx=2.5, fy=2.5, interpolation=cv2.INTER_LINEAR)
                 _, b = cv2.threshold(scaled, th, 255, cv2.THRESH_BINARY_INV)
@@ -204,13 +226,11 @@ def extract_cp_from_image(image_input: Union[str, bytes, io.BytesIO, Image.Image
         if crop_prefixed:
             counts = Counter(crop_prefixed)
             if counts.most_common(1)[0][1] >= 2:
-                valid = [k for k, c in counts.items() if c >= 2]
-                return sorted(valid, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
+                return _rank_candidates(counts)
 
     if all_prefixed:
         counts = Counter(all_prefixed)
-        valid = [k for k, c in counts.items() if c >= 2] or list(counts.keys())
-        return sorted(valid, key=lambda k: (len(str(k)), counts[k]), reverse=True)[0]
+        return _rank_candidates(counts)
 
     # Pass 1.5: Trained number model fallback (specialized for Pokemon GO CP font and glare)
     number_prefixed: List[int] = []
